@@ -410,9 +410,11 @@ function bEinst() {
   return `<div class="blatt-kopf">${tier(m, 'gross')}<div><h3>${esc(m.name)}</h3><p class="unter">${eltern() ? 'Elternteil' : 'Kind'}</p></div></div>
     <p class="klein-titel">Dein Tier</p>${tierWahl(m.tier, !!m.bild_pfad, 'A.setzTier', 'A.setzFoto')}
     <p class="klein-titel">Deine Farbe</p>${farbWahl(m.farbe, vergeben, 'A.setzFarbe')}
-    <p class="klein-titel">Mitteilungen</p>
+    <p class="klein-titel">Push-Nachrichten</p>
+    <div class="liste"><button class="zeile" onclick="A.pushGeraet()"><span class="mitte"><span class="titel">Auf diesem Gerät</span>
+      <span class="info">${{ an: 'Eingeschaltet', aus: 'Ausgeschaltet', gesperrt: 'In den iPhone-Einstellungen gesperrt', 'geht-nicht': 'Geht nur in der App auf dem Home-Bildschirm', unbekannt: 'Wird geprüft …' }[S.push]}</span></span>${kipp(S.push === 'an')}</button></div>
+    <p class="klein-titel">Wobei möchtest du eine Nachricht?</p>
     <div class="liste">${arten.map(([k, l]) => `<button class="zeile" onclick="A.pushUm('${k}')"><span class="mitte titel">${l}</span>${kipp(an(k))}</button>`).join('')}</div>
-    <p class="hinweis">Gilt, sobald Push-Nachrichten eingerichtet sind.</p>
     <p class="klein-titel">Dieses Gerät</p>
     <div class="liste"><button class="zeile" onclick="A.merkenUm()"><span class="mitte titel">Code merken</span>${kipp(S.merken)}</button>
       <button class="zeile" onclick="A.codeAuf()"><span class="mitte titel">${eltern() ? 'Einen Code ändern' : 'Meinen Code ändern'}</span><span class="info">›</span></button></div>

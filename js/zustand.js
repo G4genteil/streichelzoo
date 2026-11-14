@@ -28,6 +28,7 @@ export const S = {
   kaufT: '', kaufM: '',    // Entwurf in der Einkaufsliste
   frisch: null,            // { id, bis }: gerade abgehakt, für die Haken-Animation
   frischTab: 0,
+  push: 'unbekannt',       // an | aus | gesperrt | geht-nicht (auf diesem Gerät)
 };
 
 const UNBEKANNT = { id: null, name: 'Jemand', rolle: 'kind', farbe: '#888888', tier: '❔', bild_pfad: null, mitteilungen: {} };

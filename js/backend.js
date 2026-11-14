@@ -123,6 +123,10 @@ export function supabaseBackend(sb, url) {
     // ---------- Mitteilungen
     postGelesen: () => x(sb.from('mitteilungen').update({ gelesen: true }).eq('gelesen', false)),
 
+    // ---------- Push: dieses Gerät an- und abmelden
+    pushSpeichern: abo => x(sb.from('push_abos').upsert(abo, { onConflict: 'endpoint' })),
+    pushWeg: endpoint => x(sb.from('push_abos').delete().eq('endpoint', endpoint)),
+
     // ---------- Fotos
     async fotoHoch(eimer, blob, ordner) {
       const pfad = `${ordner}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;

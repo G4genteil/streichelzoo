@@ -9,6 +9,7 @@ export const A = {};
 let B = null;                      // die Verbindung (backend.js oder demo.js)
 let gestartet = false;             // hat B.start() schon einmal geklappt?
 let zuletzt = 0, ladeNr = 0, uhrLive = 0;
+let VAPID = '';
 
 // ------------------------------------------------------------ Merken auf dem Gerät
 
@@ -68,8 +69,8 @@ const aufgabe = id => S.d.aufgaben.find(a => a.id === id);
 
 // ------------------------------------------------------------ Start und Anmeldung
 
-export async function starte(backend) {
-  B = backend;
+export async function starte(backend, vapid) {
+  B = backend; VAPID = vapid;
   S.merken = lager.lies('zoo_merken') !== '0';
   const stand = liesStand();
   if (stand && stand.ich && S.merken && !B.demo) {       // sofort den letzten Stand zeigen, dann auffrischen
@@ -574,7 +575,40 @@ A.ibanKopieren = async () => {
 
 const meinEintrag = () => S.d.mitglieder.find(m => m.id === S.ich);
 
-A.einstAuf = () => geh({ sheet: { k: 'einst' } });
+A.einstAuf = () => { pushStand().then(render); return geh({ sheet: { k: 'einst' } }); };
+
+// ---------- Push auf diesem Gerät
+// Auf dem iPhone geht Push nur, wenn die App auf dem Home-Bildschirm liegt, und nur nach einem Tipp des Menschen.
+const pushMoeglich = () => !B.demo && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const anmeldung = async () => (await navigator.serviceWorker.ready).pushManager;
+const bytes = b64 => Uint8Array.from(atob((b64 + '='.repeat((4 - b64.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+
+async function pushStand() {
+  if (!pushMoeglich()) { S.push = 'geht-nicht'; return; }
+  if (Notification.permission === 'denied') { S.push = 'gesperrt'; return; }
+  try { S.push = (await (await anmeldung()).getSubscription()) ? 'an' : 'aus'; } catch { S.push = 'geht-nicht'; }
+}
+async function pushAbmelden() {
+  if (!pushMoeglich()) return;
+  try {
+    const abo = await (await anmeldung()).getSubscription();
+    if (!abo) return;
+    await B.pushWeg(abo.endpoint).catch(() => {});
+    await abo.unsubscribe();
+  } catch { /* dann bleibt es eben */ }
+}
+A.pushGeraet = async () => {
+  if (S.push === 'geht-nicht') return melde('Push geht nur in der App auf dem Home-Bildschirm');
+  if (S.push === 'gesperrt') return melde('Mitteilungen sind in den iPhone-Einstellungen gesperrt');
+  try {
+    if (S.push === 'an') { await pushAbmelden(); S.push = 'aus'; melde('Push auf diesem Gerät ist aus'); return render(); }
+    if (await Notification.requestPermission() !== 'granted') { await pushStand(); return render(); }
+    const abo = (await (await anmeldung()).subscribe({ userVisibleOnly: true, applicationServerKey: bytes(VAPID) })).toJSON();
+    await B.pushSpeichern({ mitglied_id: S.ich, endpoint: abo.endpoint, p256dh: abo.keys.p256dh, auth: abo.keys.auth });
+    S.push = 'an'; melde('Push auf diesem Gerät ist an');
+  } catch (e) { melde('Push ließ sich nicht einschalten: ' + (e.message || e)); await pushStand(); }
+  render();
+};
 A.setzTier = t => { const m = meinEintrag(); if (m) return tun(() => B.profilAendern({ tier: t, bild_pfad: '' }), { lokal: () => { m.tier = t; m.bild_pfad = null; } }); };
 A.setzFarbe = f => { const m = meinEintrag(); if (m) return tun(() => B.profilAendern({ farbe: f }), { lokal: () => { m.farbe = f; } }); };
 A.setzFoto = async () => {
@@ -600,6 +634,7 @@ A.codeSetzen = () => {
   return tun(() => B.codeSetzen(s.fuer, s.pin), { zu: true, ok: s.fuer === S.ich ? 'Dein Code ist geändert' : `Neuer Code für ${P(s.fuer).name} gespeichert` });
 };
 A.abmelden = async () => {
+  await pushAbmelden();                                // sonst bekäme das Gerät weiter die Nachrichten dieser Person
   try { await B.abmelden(); } catch (e) { return melde(e.message); }
   await raus();
 };

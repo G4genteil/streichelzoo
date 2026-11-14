@@ -200,6 +200,7 @@ export function demoBackend() {
     async buchungen(id) { await warte(); return kopie(BUCH.filter(b => b.schwein_id === id).sort((a, b) => b.am.localeCompare(a.am))); },
     async schweinAufbrechen(id) { if (!eltern()) nein('Aufbrechen können nur Eltern'); SCHW = SCHW.filter(s => s.id !== id); },
 
+    async pushSpeichern() {}, async pushWeg() {},
     async postGelesen() { if (POST[ichId]) POST[ichId].length = 0; },
     async fotoHoch(eimer, blob) { return URL.createObjectURL(blob); },
     async fotoUrl(pfad) { return pfad; },
