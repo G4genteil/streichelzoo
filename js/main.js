@@ -1,6 +1,6 @@
 // Startpunkt. Mit ?demo in der Adresse läuft alles nur im Speicher (demo.js), sonst gegen Supabase.
 import { S } from './zustand.js';
-import { ziehen, tastaturBeachten } from './kern.js';
+import { ziehen, tastaturBeachten, fuehlen } from './kern.js';
 import { A, starte } from './aktionen.js';
 import { supabaseBackend } from './backend.js';
 import { demoBackend } from './demo.js';
@@ -12,6 +12,7 @@ const B = S.demo ? demoBackend() : supabaseBackend(window.supabase.createClient(
 S.bildUrl = B.bildUrl;
 ziehen(() => A.zu());
 tastaturBeachten();
+fuehlen();
 starte(B, VAPID_PUBLIC);
 
 // Offline-Start. Nicht in der Demo, damit beim Ausprobieren nichts Altes hängen bleibt.

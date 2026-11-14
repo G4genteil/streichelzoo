@@ -239,6 +239,43 @@ input[type="date"].feld::-webkit-date-and-time-value,input[type="time"].feld::-w
 .tor.start .knopf{animation-delay:.44s}
 @keyframes auftritt{from{opacity:0;transform:translateY(18px) scale(.94)}}
 
+/* Zeilen, die man antippen kann, leuchten beim Drücken kurz auf und klingen weich ab. */
+button.zeile{transition:background-color .45s ease-out}
+button.zeile:active{background-color:var(--feld);transition:none}
+.zeile .titel{transition:color .3s}
+.tabs button{transition:color .2s,transform .22s var(--feder)}
+.tabs button:active{transform:scale(.9)}
+.tasten button{transition:transform .22s var(--feder),background-color .4s ease-out}
+.tasten button:active{transition:none}
+.schwein .summe,.zahl,.gross-zahl{font-variant-numeric:tabular-nums}
+
+/* Seitenwechsel: Die alte Seite weicht in die Richtung, aus der die neue kommt. */
+.screen{view-transition-name:seite}
+html[data-zug] .screen *{view-transition-name:none!important}
+html[data-zug]::view-transition-old(seite){animation:.16s ease-in both}
+html[data-zug]::view-transition-new(seite){animation:.44s cubic-bezier(.2,.9,.25,1) .03s both}
+html[data-zug=vor]::view-transition-old(seite){animation-name:raus-links}
+html[data-zug=vor]::view-transition-new(seite){animation-name:rein-rechts}
+html[data-zug=zurueck]::view-transition-old(seite){animation-name:raus-rechts}
+html[data-zug=zurueck]::view-transition-new(seite){animation-name:rein-links}
+html[data-zug=rein]::view-transition-old(seite){animation-name:raus-gross}
+html[data-zug=rein]::view-transition-new(seite){animation-name:rein-klein;animation-duration:.55s}
+@keyframes raus-links{to{opacity:0;transform:translateX(-26px)}}
+@keyframes raus-rechts{to{opacity:0;transform:translateX(26px)}}
+@keyframes rein-rechts{from{opacity:0;transform:translateX(30px)}}
+@keyframes rein-links{from{opacity:0;transform:translateX(-30px)}}
+@keyframes raus-gross{to{opacity:0;transform:scale(1.06)}}
+@keyframes rein-klein{from{opacity:0;transform:scale(.93)}}
+::view-transition-new(tabs):only-child{animation:tabs-hoch .5s cubic-bezier(.2,.9,.25,1) .1s both}
+@keyframes tabs-hoch{from{transform:translateY(100%)}}
+
+/* Zeilen, die neu dazukommen oder verschwinden, wachsen und schrumpfen an ihrem Platz. */
+.zeile{view-transition-class:zeile}
+::view-transition-new(.zeile):only-child{animation:zeile-rein .4s cubic-bezier(.2,1.1,.35,1) both}
+::view-transition-old(.zeile):only-child{animation:zeile-raus .18s ease-in both}
+@keyframes zeile-rein{from{opacity:0;transform:scale(.9)}}
+@keyframes zeile-raus{to{opacity:0;transform:scale(.9)}}
+
 .tabs{view-transition-name:tabs}
 .schalter:not(.im-blatt) button.an{view-transition-name:daumen}
 .schalter.im-blatt button.an{view-transition-name:daumen-blatt}
