@@ -1,0 +1,260 @@
+/* Streichelzoo
+   Ruhig und aufgeräumt. Jede Person hat eine Farbe (--c), die sich durch die App zieht.
+   Das einzige laute Element ist die Joker-Karte. */
+
+:root{
+  --grund:#EDF0EB; --karte:#FFFFFF; --tinte:#16201B; --leise:#69736C; --linie:#E1E5DF;
+  --wiese:#2B7556; --auf-wiese:#FFFFFF; --warn:#B4472F; --feld:#E4E8E2;
+  --rund: ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+  --text: -apple-system, "SF Pro Text", system-ui, "Segoe UI", sans-serif;
+  --oben: env(safe-area-inset-top, 0px);
+  --unten: env(safe-area-inset-bottom, 0px);
+  --feder: cubic-bezier(.3,1.5,.4,1);
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --grund:#0F1512; --karte:#1A221E; --tinte:#EEF2EE; --leise:#96A19A; --linie:#29332E;
+    --wiese:#5DB58E; --auf-wiese:#0C1410; --warn:#E5876F; --feld:#242D28; }
+}
+
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden}
+body{font-family:var(--text);color:var(--tinte);background:#D9DED7;display:grid;place-items:center;font-size:16px;line-height:1.35;
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-text-size-adjust:100%}
+@media (prefers-color-scheme: dark){body{background:#060907}}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;touch-action:manipulation;text-align:inherit}
+button:disabled{opacity:.35;cursor:default}
+button:focus-visible,input:focus-visible{outline:3px solid var(--wiese);outline-offset:2px}
+input{font:inherit;color:inherit;-webkit-user-select:text;user-select:text}
+img{display:block}
+
+/* ---------- Rahmen: am PC ein iPhone-Umriss, auf dem iPhone der ganze Bildschirm ---------- */
+.phone{width:390px;height:844px;max-height:100vh;background:var(--grund);border-radius:44px;overflow:hidden;position:relative;box-shadow:0 30px 80px rgba(22,32,27,.28)}
+#app{position:absolute;inset:0}
+.screen{position:absolute;inset:0;overflow-y:auto;padding:58px 16px 110px;overscroll-behavior:contain;scrollbar-width:none}
+.screen::-webkit-scrollbar{display:none}
+.screen.ganz{padding-bottom:30px}
+@media (max-width:500px){
+  body{background:var(--grund)}
+  .phone{width:100vw;height:100dvh;max-height:none;border-radius:0;box-shadow:none}
+  .screen{padding:calc(var(--oben) + 20px) 16px calc(var(--unten) + 96px)}
+  .screen.ganz{padding-bottom:calc(var(--unten) + 24px)}
+}
+
+h1{font-family:var(--rund);font-weight:800;font-size:34px;letter-spacing:-.4px;line-height:1.1}
+h1.kleiner{font-size:28px}
+h2{font-family:var(--rund);font-weight:700;font-size:20px;margin:28px 4px 10px}
+h3{font-family:var(--rund);font-weight:800;font-size:24px;line-height:1.15}
+.unter{color:var(--leise);font-size:15px;margin-top:4px}
+.unter.fehler{color:var(--warn);font-weight:600}
+.kopf{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:0 4px}
+.hinweis{color:var(--leise);font-size:13px;margin:8px 4px 0}
+.klein-titel{font-size:13px;color:var(--leise);font-weight:600;margin:18px 4px 6px}
+.abstand{margin-top:18px}
+
+/* ---------- Tiere (Profilbilder) ---------- */
+.tier{--c:#888;width:44px;height:44px;border-radius:50%;background:color-mix(in srgb,var(--c) 20%,var(--karte));display:grid;place-items:center;font-size:24px;flex:none;border:2px solid var(--c);overflow:hidden}
+.tier img{width:100%;height:100%;object-fit:cover}
+.tier.klein{width:28px;height:28px;font-size:15px;border-width:1.5px}
+.tier.gross{width:84px;height:84px;font-size:46px;border-width:3px}
+
+/* ---------- Listen ---------- */
+.liste{background:var(--karte);border-radius:16px;overflow:hidden}
+.liste.eng{margin-top:14px}
+.zeile{display:flex;align-items:center;gap:12px;padding:13px 14px;min-height:56px;position:relative;width:100%;text-align:left}
+.zeile + .zeile::before{content:"";position:absolute;top:0;left:14px;right:0;height:1px;background:var(--linie)}
+.zeile .mitte{flex:1;min-width:0;display:block}
+.zeile .titel{font-size:16px;font-weight:500;display:block;overflow-wrap:anywhere}
+.zeile .info{font-size:13px;color:var(--leise);margin-top:1px;display:block}
+.zeile > .info{margin:0;flex:none;max-width:55%;text-align:right}
+.zeile.fertig .titel{color:var(--leise);text-decoration:line-through}
+.zeile.meins{background:color-mix(in srgb,var(--c) 10%,var(--karte))}
+.leer{padding:22px 16px;color:var(--leise);font-size:15px;text-align:center}
+.punkt{width:10px;height:10px;border-radius:50%;background:var(--wiese);flex:none;margin:0 4px}
+.text-knopf{display:block;margin:8px 4px 0 auto;color:var(--wiese);font-weight:600;font-size:15px;padding:6px 4px}
+
+.haken{--c:var(--wiese);width:28px;height:28px;border-radius:50%;border:2px solid var(--c);flex:none;display:grid;place-items:center}
+.haken svg{width:15px;height:15px;stroke:#fff;stroke-width:3;fill:none;opacity:0}
+.haken.wartet{background:color-mix(in srgb,var(--c) 28%,transparent);border-style:dashed}
+.haken.erledigt{background:var(--c)}
+.haken.erledigt svg{opacity:1}
+
+.pille{font-size:13px;font-weight:600;padding:7px 12px;border-radius:99px;background:var(--feld);white-space:nowrap;flex:none}
+.pille.ja{background:var(--wiese);color:var(--auf-wiese)}
+.pille.nein{color:var(--warn)}
+.marke{font-size:11px;font-weight:600;color:var(--leise);border:1px solid var(--linie);padding:1px 6px;border-radius:6px;margin-left:6px;vertical-align:1px;text-decoration:none;display:inline-block}
+
+.knopf{display:block;width:100%;padding:15px;border-radius:14px;background:var(--wiese);color:var(--auf-wiese);font-weight:600;font-size:17px;text-align:center}
+.knopf.still{background:var(--karte);color:var(--wiese)}
+.knopf.gefahr{background:none;color:var(--warn)}
+.knopf.schmal{width:auto;padding:12px 22px;font-size:16px;margin-top:34px}
+.knoepfe{display:flex;flex-direction:column;gap:8px;margin-top:18px}
+.zwei{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.plus{width:36px;height:36px;border-radius:50%;background:var(--wiese);color:var(--auf-wiese);font-size:24px;line-height:1;display:grid;place-items:center;margin-top:4px;flex:none}
+
+/* ---------- Umschalter ---------- */
+.schalter{display:flex;background:var(--feld);border-radius:10px;padding:2px;margin:16px 0}
+.schalter.im-blatt{margin:0}
+.schalter button{flex:1;padding:7px 4px;border-radius:8px;font-size:14px;font-weight:600;color:var(--leise);text-align:center}
+.schalter button.an{background:var(--karte);color:var(--tinte);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.kipp{width:50px;height:30px;border-radius:15px;background:var(--feld);position:relative;flex:none;transition:background .25s}
+.kipp::after{content:"";position:absolute;top:2px;left:2px;width:26px;height:26px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .32s cubic-bezier(.3,1.4,.4,1)}
+.kipp.an{background:var(--wiese)}
+.kipp.an::after{transform:translateX(20px)}
+
+/* ---------- Tableiste ---------- */
+.tabs{position:absolute;left:0;right:0;bottom:0;display:flex;padding:8px 6px 26px;background:color-mix(in srgb,var(--grund) 82%,transparent);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-top:1px solid var(--linie)}
+@media (max-width:500px){ .tabs{padding-bottom:max(8px, calc(var(--unten) - 6px))} }
+.tabs button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;font-weight:600;color:var(--leise);padding:4px 0}
+.tabs svg{width:26px;height:26px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.tabs button.an{color:var(--wiese)}
+
+/* ---------- Anmeldung ---------- */
+.tor{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100%;padding:24px 12px;text-align:center}
+.tor h1{font-size:40px}
+.tor h1.kleiner{font-size:28px;margin-top:14px}
+.marke-logo{width:132px;height:132px;margin-bottom:18px}
+.marke-logo.puls{animation:puls 1.6s ease-in-out infinite}
+@keyframes puls{50%{transform:scale(.94);opacity:.75}}
+.gehege{display:grid;grid-template-columns:1fr 1fr;gap:26px 34px;margin-top:40px}
+.gehege button{display:flex;flex-direction:column;align-items:center;gap:8px;font-family:var(--rund);font-weight:700;font-size:18px;text-align:center}
+.gehege small{font-family:var(--text);font-weight:400;font-size:13px;color:var(--leise);margin-top:-6px}
+.punkte{display:flex;gap:16px;margin:26px 0 30px}
+.punkte i{width:14px;height:14px;border-radius:50%;border:2px solid var(--tinte);transition:background .15s,transform .25s cubic-bezier(.3,1.8,.4,1)}
+.punkte i.voll{background:var(--tinte);transform:scale(1.15)}
+.punkte.wackel{animation:wackel .45s}
+@keyframes wackel{20%{transform:translateX(-10px)}40%{transform:translateX(9px)}60%{transform:translateX(-6px)}80%{transform:translateX(4px)}}
+.tasten{display:grid;grid-template-columns:repeat(3,76px);gap:14px 22px}
+.tasten button{height:76px;border-radius:50%;background:var(--karte);font-family:var(--rund);font-size:30px;font-weight:600;text-align:center}
+.tasten button:active{background:var(--feld)}
+.tasten .leerfeld{background:none;font-size:15px;color:var(--leise);font-family:var(--text)}
+.tasten .leerfeld:active{background:none}
+.merkzeile{display:flex;align-items:center;gap:14px;margin-top:30px;font-size:15px;color:var(--leise)}
+
+.neu{padding:0 4px 20px}
+.zurueck{color:var(--wiese);font-weight:600;font-size:17px;padding:6px 8px 6px 0}
+.neu-kopf{display:flex;align-items:center;gap:16px;margin:14px 0 4px}
+.tiere{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
+.tiere button{aspect-ratio:1;border-radius:14px;background:var(--karte);font-size:26px;display:grid;place-items:center;border:2px solid transparent;text-align:center}
+.tiere button.an{border-color:var(--wiese)}
+.tiere .foto{font-size:13px;font-weight:600;color:var(--wiese)}
+.farben{display:flex;flex-wrap:wrap;gap:10px}
+.farben button{width:40px;height:40px;border-radius:50%;background:var(--c);border:3px solid var(--grund);box-shadow:0 0 0 2px transparent}
+.farben button.an{box-shadow:0 0 0 3px var(--c)}
+.farben button:disabled{opacity:.18}
+
+/* ---------- Eingaben ---------- */
+.eingabe{display:flex;gap:8px}
+.feld{flex:1;min-width:0;padding:13px 14px;border-radius:12px;border:0;background:var(--feld);font-size:16px;min-height:48px;-webkit-appearance:none;appearance:none}
+.feld.voll{width:100%;display:block}
+.feld.hell{background:var(--karte)}
+.feld.geheim{-webkit-text-security:disc}
+.feld::placeholder{color:var(--leise);opacity:.8}
+input[type="date"].feld,input[type="time"].feld{text-align:left;display:block}
+input[type="date"].feld::-webkit-date-and-time-value,input[type="time"].feld::-webkit-date-and-time-value{text-align:left}
+.eingabe .knopf{width:auto;padding:13px 18px;font-size:16px;flex:none}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:flex;align-items:center;gap:6px;padding:6px 12px 6px 6px;border-radius:99px;background:var(--karte);font-size:14px;font-weight:600;border:2px solid transparent}
+.chip.nur{padding:8px 12px}
+.chip.an{border-color:var(--c,var(--wiese))}
+
+/* ---------- Joker ---------- */
+.jokerfeld{display:flex;align-items:center;gap:26px;width:100%;background:var(--karte);border-radius:18px;padding:20px 18px 20px 28px;text-align:left}
+.jokerfeld b{font-family:var(--rund);font-weight:800;font-size:20px;display:block}
+.jokerfeld .info{display:block;font-size:14px;color:var(--leise);margin:2px 0 12px}
+.jokerfeld .pille{display:inline-block}
+.stapel{position:relative;width:88px;aspect-ratio:538/821;flex:none}
+.stapel img{position:absolute;inset:0;width:100%;height:100%;filter:drop-shadow(0 5px 8px rgba(120,60,10,.3));transform:rotate(-5deg)}
+.stapel img:nth-last-child(2){transform:rotate(4deg) translate(9px,2px)}
+.stapel img:nth-last-child(3){transform:rotate(12deg) translate(17px,7px)}
+.grosskarte{width:210px;margin:6px auto 20px;transform:rotate(-3deg);filter:drop-shadow(0 16px 22px rgba(120,60,10,.35))}
+
+/* ---------- Bestenliste ---------- */
+.rang{width:22px;font-family:var(--rund);font-weight:800;font-size:18px;color:var(--leise);text-align:center;flex:none}
+.balken{height:8px;border-radius:4px;background:var(--feld);margin-top:6px;overflow:hidden}
+.balken i{display:block;height:100%;border-radius:4px;background:var(--c,var(--wiese));transition:width .5s cubic-bezier(.3,1.2,.4,1)}
+.zahl{font-family:var(--rund);font-weight:800;font-size:20px;min-width:34px;text-align:right;flex:none}
+.zahl.klein{font-size:16px}
+.zahl.minus{color:var(--warn)}
+.gross-zahl{font-family:var(--rund);font-weight:800;font-size:40px;margin-top:6px}
+
+/* ---------- Sparschweine ---------- */
+.stall{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.schwein{background:var(--karte);border-radius:18px;padding:14px;text-align:left;display:flex;flex-direction:column;gap:2px;min-height:140px}
+.schwein .nase{font-size:30px;margin-bottom:6px}
+.schwein .titel{font-weight:500;overflow-wrap:anywhere}
+.schwein .summe{font-family:var(--rund);font-weight:800;font-size:22px}
+.schwein .balken{width:100%}
+.schwein .von{font-size:12px;color:var(--leise);margin-top:4px}
+.schwein.neu{border:2px dashed var(--linie);background:none;align-items:center;justify-content:center;color:var(--leise);font-weight:600;text-align:center}
+.betraege{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:14px 0 8px}
+.betraege button{padding:14px 0;border-radius:12px;background:var(--feld);font-family:var(--rund);font-weight:700;font-size:17px;text-align:center}
+
+/* ---------- Kalender ---------- */
+.monat{display:flex;align-items:center;gap:8px;margin:2px 0 8px}
+.monat span{font-family:var(--rund);font-weight:700;font-size:17px;flex:1}
+.monat .pfeil{width:36px;height:36px;border-radius:50%;background:var(--karte);font-size:22px;line-height:1;display:grid;place-items:center;color:var(--wiese);text-align:center}
+.woche{display:flex;justify-content:space-between;margin:4px 0 6px}
+.woche button{width:44px;padding:8px 0 6px;border-radius:14px;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:12px;color:var(--leise);font-weight:600}
+.woche b{font-family:var(--rund);font-size:18px;color:var(--tinte)}
+.woche button.heute b{color:var(--wiese)}
+.woche button.an{background:var(--tinte);color:var(--grund)}
+.woche button.an b{color:var(--grund)}
+.woche i{width:5px;height:5px;border-radius:50%;background:transparent}
+.woche i.da{background:var(--wiese)}
+.woche button.an i.da{background:var(--grund)}
+.termin{border-left:4px solid var(--c);padding-left:10px}
+.zeit{width:46px;font-size:14px;font-weight:600;color:var(--leise);flex:none}
+.zeit.tag{font-size:11px;line-height:1.15}
+
+/* ---------- Blatt von unten ---------- */
+.schleier{position:absolute;inset:0;background:rgba(10,16,13,.4);display:flex;align-items:flex-end;padding-bottom:var(--tast,0px);view-transition-name:schleier}
+.blatt{background:var(--grund);width:100%;border-radius:26px 26px 0 0;padding:0 16px 34px;max-height:90%;overflow-y:auto;overscroll-behavior:contain;view-transition-name:blatt}
+@media (max-width:500px){ .blatt{padding-bottom:calc(var(--unten) + 22px)} }
+.griff-zone{display:block;padding:10px 0 14px;margin:0 -16px;touch-action:none;cursor:grab}
+.griff{width:38px;height:5px;border-radius:3px;background:var(--linie);margin:0 auto}
+.blatt-kopf{display:flex;align-items:center;gap:14px}
+.beweis{width:100%;border-radius:16px;margin-top:14px;max-height:300px;object-fit:cover}
+.beweis.laedt{background:var(--feld);height:120px;display:grid;place-items:center;color:var(--leise);font-size:14px}
+
+/* ---------- Kurzmeldung ---------- */
+#toast{position:absolute;left:50%;bottom:104px;transform:translate(-50%,16px) scale(.92);background:var(--tinte);color:var(--grund);padding:10px 16px;border-radius:99px;font-size:14px;font-weight:600;max-width:calc(100% - 32px);text-align:center;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s ease-in;z-index:5}
+#toast.an{opacity:1;transform:translate(-50%,0) scale(1);transition:opacity .2s,transform .42s var(--feder)}
+@media (max-width:500px){ #toast{bottom:calc(var(--unten) + 86px)} }
+.banner{background:color-mix(in srgb,var(--warn) 14%,var(--karte));color:var(--warn);font-size:14px;font-weight:600;padding:10px 14px;border-radius:12px;margin:14px 0 0;overflow-wrap:anywhere}
+
+/* ---------- Bewegung ---------- */
+.feder,.knopf,.pille,.plus,.schwein,.jokerfeld,.gehege button,.tasten button,.chip,.betraege button,.woche button,.haken,.tiere button,.farben button,.monat .pfeil{transition:transform .22s var(--feder),background .2s,box-shadow .2s}
+.knopf:active,.schwein:active,.gehege button:active,.jokerfeld:active{transform:scale(.96)}
+.feder:active,.pille:active,.plus:active,.chip:active,.betraege button:active,.tasten button:active,.woche button:active,.haken:active,.tiere button:active,.farben button:active,.monat .pfeil:active{transform:scale(.9)}
+.haken.frisch{animation:plopp .5s cubic-bezier(.3,1.7,.4,1)}
+.haken.frisch svg path{stroke-dasharray:16;stroke-dashoffset:16;animation:strich .28s .14s ease-out forwards}
+.tabs button.frisch svg{animation:plopp .45s cubic-bezier(.3,1.7,.4,1)}
+@keyframes plopp{0%{transform:scale(.6)}}
+@keyframes strich{to{stroke-dashoffset:0}}
+.tor.start .marke-logo,.tor.start h1,.tor.start .unter,.tor.start .gehege button,.tor.start .knopf{animation:auftritt .7s cubic-bezier(.2,1.2,.35,1) both}
+.tor.start h1{animation-delay:.06s}.tor.start .unter{animation-delay:.1s}
+.tor.start .gehege button:nth-child(1){animation-delay:.18s}.tor.start .gehege button:nth-child(2){animation-delay:.24s}
+.tor.start .gehege button:nth-child(3){animation-delay:.3s}.tor.start .gehege button:nth-child(4){animation-delay:.36s}
+.tor.start .knopf{animation-delay:.44s}
+@keyframes auftritt{from{opacity:0;transform:translateY(18px) scale(.94)}}
+
+.tabs{view-transition-name:tabs}
+.schalter:not(.im-blatt) button.an{view-transition-name:daumen}
+.schalter.im-blatt button.an{view-transition-name:daumen-blatt}
+::view-transition{pointer-events:none}
+::view-transition-group(*){animation-duration:.42s;animation-timing-function:cubic-bezier(.3,1.2,.4,1)}
+::view-transition-old(root),::view-transition-new(root){animation-duration:.2s}
+::view-transition-new(blatt):only-child{animation:blatt-hoch .46s cubic-bezier(.2,.95,.25,1) both}
+::view-transition-old(blatt):only-child{animation:blatt-runter .26s cubic-bezier(.4,0,1,1) both}
+@keyframes blatt-hoch{from{transform:translateY(34%);opacity:0}}
+@keyframes blatt-runter{to{transform:translateY(34%);opacity:0}}
+@media (max-width:500px){
+  @keyframes blatt-hoch{from{transform:translateY(100%)}}
+  @keyframes blatt-runter{to{transform:translateY(100%)}}
+}
+::view-transition-group(jokerkarte){animation-duration:.5s;animation-timing-function:cubic-bezier(.3,1.25,.4,1)}
+::view-transition-old(jokerkarte):only-child{animation:karte-weg .55s cubic-bezier(.5,0,.9,.5) both}
+@keyframes karte-weg{to{transform:translateY(-130%) rotate(16deg) scale(.8);opacity:0}}
+
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}

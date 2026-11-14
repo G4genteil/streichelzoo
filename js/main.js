@@ -1,0 +1,18 @@
+// Startpunkt. Mit ?demo in der Adresse läuft alles nur im Speicher (demo.js), sonst gegen Supabase.
+import { S } from './zustand.js';
+import { ziehen, tastaturBeachten } from './kern.js';
+import { A, starte } from './aktionen.js';
+import { supabaseBackend } from './backend.js';
+import { demoBackend } from './demo.js';
+import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
+
+window.A = A;
+S.demo = new URLSearchParams(location.search).has('demo');
+const B = S.demo ? demoBackend() : supabaseBackend(window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY), SUPABASE_URL);
+S.bildUrl = B.bildUrl;
+ziehen(() => A.zu());
+tastaturBeachten();
+starte(B);
+
+// Offline-Start. Nicht in der Demo, damit beim Ausprobieren nichts Altes hängen bleibt.
+if ('serviceWorker' in navigator && !S.demo) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));

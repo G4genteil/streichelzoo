@@ -1,0 +1,606 @@
+// Alles, was beim Antippen passiert. Die Ansichten rufen diese Funktionen über A.name(...) auf.
+// Muster: erst die Anzeige sofort anpassen ("lokal"), dann den Server fragen, dann den echten Stand nachladen.
+// Lehnt der Server ab, zeigt das Nachladen wieder die Wahrheit.
+import { S, P, ich, eltern, leer } from './zustand.js';
+import { render, zeichne, geh, melde } from './kern.js';
+import { heute, plus, iso, euro, centAus, PUNKTE, TIERE, FARBEN } from './hilfen.js';
+
+export const A = {};
+let B = null;                      // die Verbindung (backend.js oder demo.js)
+let gestartet = false;             // hat B.start() schon einmal geklappt?
+let zuletzt = 0, ladeNr = 0, uhrLive = 0;
+
+// ------------------------------------------------------------ Merken auf dem Gerät
+
+const lager = {
+  lies: k => { try { return localStorage.getItem(k); } catch { return null; } },
+  setz: (k, v) => { try { localStorage.setItem(k, v); } catch { /* voll oder gesperrt: dann eben nicht */ } },
+  weg: k => { try { localStorage.removeItem(k); } catch { /* egal */ } },
+};
+const merkeStand = () => { if (!B.demo && S.merken && S.ich) lager.setz('zoo_stand', JSON.stringify({ ich: S.ich, d: S.d })); };
+const liesStand = () => { try { return JSON.parse(lager.lies('zoo_stand')); } catch { return null; } };
+
+// ------------------------------------------------------------ Laden und Speichern
+
+async function laden() {
+  if (S.phase !== 'app') return;
+  const nr = ++ladeNr;
+  let d;
+  try { d = await B.laden(); }
+  catch (e) {
+    if (nr === ladeNr && S.ladeFehler !== e.message) { S.ladeFehler = e.message; render(); }
+    return;
+  }
+  if (nr !== ladeNr || S.phase !== 'app') return;      // inzwischen läuft ein neueres Laden
+  zuletzt = Date.now();
+  if (!d.mitglieder.some(m => m.id === S.ich)) {
+    const wer = await B.wer().catch(() => S.ich);
+    if (!wer) return raus('Bitte melde dich noch einmal an');   // z. B. hat ein Elternteil den Code neu gesetzt
+  }
+  const roh = JSON.stringify(d), hatteFehler = !!S.ladeFehler;
+  S.ladeFehler = '';
+  if (roh === S.roh && !hatteFehler) return;           // nichts Neues
+  S.roh = roh; S.d = d; S.profile = d.mitglieder;
+  merkeStand();
+  render();
+}
+
+async function tun(ruf, { lokal, ok, zu } = {}) {
+  if (lokal) { lokal(); S.roh = ''; }
+  if (zu) S.sheet = null;
+  if (lokal || zu) render();
+  try {
+    const ergebnis = await ruf();
+    if (ok) melde(typeof ok === 'function' ? ok(ergebnis) : ok);
+    await laden();
+    return true;
+  } catch (e) {
+    melde(e.message || 'Das hat nicht geklappt');
+    S.roh = '';
+    await laden();
+    return false;
+  }
+}
+
+const eben = id => { S.frisch = { id, bis: Date.now() + 800 }; };
+const punkteLokal = (id, wert) => { const b = S.d.best.find(x => x.mitglied_id === id); if (b) { b.woche += wert; b.gesamt += wert; } };
+const aufgabe = id => S.d.aufgaben.find(a => a.id === id);
+
+// ------------------------------------------------------------ Start und Anmeldung
+
+export async function starte(backend) {
+  B = backend;
+  S.merken = lager.lies('zoo_merken') !== '0';
+  const stand = liesStand();
+  if (stand && stand.ich && S.merken && !B.demo) {       // sofort den letzten Stand zeigen, dann auffrischen
+    S.ich = stand.ich; S.d = { ...leer(), ...stand.d }; S.profile = S.d.mitglieder; S.phase = 'app'; S.start = false;
+  }
+  zeichne();
+  await verbinde();
+
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) auffrischen(); });
+  window.addEventListener('online', auffrischen);
+  setInterval(() => { if (!document.hidden) auffrischen(); }, 60000);
+}
+
+async function verbinde() {
+  try {
+    const { profile, ich: wer } = await B.start();
+    gestartet = true;
+    S.profile = profile;
+    if (wer && S.merken) { S.ich = wer; await rein(); }
+    else if (wer) { await B.abmelden(); zumCode(wer); }       // "Code merken" ist aus: jedes Mal neu fragen
+    else nachDraussen();
+  } catch (e) {
+    if (S.phase === 'app') S.ladeFehler = e.message;
+    else { S.phase = 'fehler'; S.fehler = e.message; }
+    render();
+  }
+}
+
+function auffrischen() {
+  if (!gestartet) { if (S.phase !== 'laden') verbinde(); return; }
+  if (S.phase === 'app') { zeichne(); if (Date.now() - zuletzt > 4000) laden(); }
+  else if (S.phase === 'tor') B.profile().then(p => { S.profile = p; if (S.phase === 'tor') render(); }).catch(() => {});
+}
+
+async function rein() {
+  S.phase = 'app'; S.tab = 'heute'; S.sheet = null; S.neu = null; S.pinFuer = null; S.pin = ''; S.start = false;
+  render();
+  await laden();
+  B.beobachten(() => { clearTimeout(uhrLive); uhrLive = setTimeout(laden, 250); });
+}
+
+function nachDraussen() {
+  S.ich = null; S.d = leer(); S.roh = ''; S.sheet = null; S.phase = 'tor';
+  lager.weg('zoo_stand');
+  render();
+}
+
+function zumCode(id) {
+  S.ich = null; S.pinFuer = id; S.pin = ''; S.pinFehler = ''; S.phase = 'pin';
+  render();
+}
+
+async function raus(text) {
+  B.nichtBeobachten();
+  S.profile = await B.profile().catch(() => S.profile);
+  nachDraussen();
+  if (text) melde(text);
+}
+
+A.neustart = () => { S.phase = 'laden'; S.fehler = ''; zeichne(); verbinde(); };
+A.waehle = id => { S.start = false; zumCode(id); };
+A.zurueck = () => { S.start = false; S.neu = null; S.pinFuer = null; S.phase = 'tor'; render(); };
+A.loesch = () => { S.pin = S.pin.slice(0, -1); zeichne(); };
+
+A.taste = async z => {
+  if (S.pin.length >= 4 || S.beschaeftigt) return;
+  S.pin += z; S.pinFehler = '';
+  zeichne();
+  if (S.pin.length < 4) return;
+  S.beschaeftigt = true;
+  try {
+    const r = await B.anmelden(S.pinFuer, S.pin);
+    if (r.ok) {
+      lager.setz('zoo_merken', S.merken ? '1' : '0');
+      S.ich = S.pinFuer; S.beschaeftigt = false;
+      return await rein();
+    }
+    S.pinFehler = r.grund === 'gesperrt' ? 'Zu viele Versuche. Warte 10 Minuten.' : 'Der Code stimmt nicht';
+  } catch (e) { S.pinFehler = e.message; }
+  S.pin = ''; S.pinWackel = Date.now() + 500; S.beschaeftigt = false;
+  zeichne();
+};
+
+A.merkenUm = () => {
+  S.merken = !S.merken;
+  lager.setz('zoo_merken', S.merken ? '1' : '0');
+  if (S.merken) merkeStand(); else lager.weg('zoo_stand');
+  render();
+};
+
+// ---------- Neues Profil
+
+const GRUND = {
+  familiencode: 'Der Familiencode stimmt nicht', eltern_pin: 'Der Eltern-PIN stimmt nicht',
+  farbe: 'Diese Farbe ist schon vergeben', pin: 'Dein Code braucht genau 4 Ziffern',
+  gesperrt: 'Zu viele Versuche. Warte 10 Minuten.', nicht_eingerichtet: 'Die Datenbank ist noch nicht eingerichtet',
+  anmeldung: 'Keine Verbindung zum Server', rolle: 'Wähle Kind oder Elternteil',
+};
+
+A.neuStart = () => {
+  const farben = new Set(S.profile.map(p => p.farbe)), tiere = new Set(S.profile.map(p => p.tier));
+  S.start = false;
+  S.neu = { name: '', rolle: 'kind', pin: '', familiencode: '', elternPin: '', foto: null, fotoUrl: null,
+    tier: TIERE.find(t => !tiere.has(t)) || TIERE[0], farbe: (FARBEN.find(([f]) => !farben.has(f)) || FARBEN[0])[0] };
+  S.phase = 'neu';
+  render();
+};
+A.neuSetz = (k, v) => { S.neu[k] = v; render(); };
+A.neuTier = t => { S.neu.tier = t; S.neu.foto = null; S.neu.fotoUrl = null; render(); };
+A.neuFarbe = f => { S.neu.farbe = f; render(); };
+A.neuFoto = async () => {
+  const bild = await bildWaehlen(false, 400, true);
+  if (!bild || !S.neu) return;
+  S.neu.foto = bild; S.neu.fotoUrl = URL.createObjectURL(bild);
+  render();
+};
+
+A.neuFertig = async () => {
+  const n = S.neu;
+  if (!n || S.beschaeftigt) return;
+  const name = n.name.trim(), code = n.familiencode.trim(), elternPin = n.elternPin.trim();
+  if (!name) return melde('Wie heißt du?');
+  if (!/^\d{4}$/.test(n.pin)) return melde('Dein Code braucht genau 4 Ziffern');
+  if (!code) return melde('Der Familiencode fehlt');
+  if (n.rolle === 'eltern' && !elternPin) return melde('Der Eltern-PIN fehlt');
+  S.beschaeftigt = true; render();
+  try {
+    const r = await B.profilAnlegen({ name, rolle: n.rolle, farbe: n.farbe, tier: n.tier, pin: n.pin, familiencode: code, elternPin });
+    if (r.ok) {
+      S.ich = r.id;
+      lager.setz('zoo_merken', S.merken ? '1' : '0');
+      if (n.foto) {
+        try { await B.profilAendern({ bild_pfad: await B.fotoHoch('profilbilder', n.foto, r.id) }); }
+        catch { melde('Das Foto konnte nicht gespeichert werden'); }
+      }
+      S.profile = await B.profile().catch(() => S.profile);
+      S.beschaeftigt = false;
+      return await rein();
+    }
+    melde(GRUND[r.grund] || 'Das hat nicht geklappt');
+  } catch (e) { melde(e.message); }
+  S.beschaeftigt = false; render();
+};
+
+// ------------------------------------------------------------ Allgemeines
+
+A.geh = geh;
+A.zu = () => { if (S.sheet) geh({ sheet: null }); };
+A.setz = (k, v) => { S[k] = v; };                                  // Entwurf auf der Seite, ohne neu zu zeichnen
+A.entwurf = (k, v) => { const ziel = S.sheet || S.neu; if (ziel) ziel[k] = v; };
+A.blattSetz = (k, v) => { if (S.sheet) { S.sheet[k] = v; render(); } };
+A.blattUm = k => { if (S.sheet) { S.sheet[k] = !S.sheet[k]; render(); } };
+
+// ---------- Fotos: wählen, verkleinern
+
+function dateiWaehlen(kamera) {
+  return new Promise(fertig => {
+    const i = document.createElement('input');
+    i.type = 'file'; i.accept = 'image/*'; i.style.display = 'none';
+    if (kamera) i.capture = 'environment';
+    document.body.appendChild(i);
+    i.addEventListener('change', () => { const f = i.files && i.files[0]; i.remove(); fertig(f || null); });
+    i.addEventListener('cancel', () => { i.remove(); fertig(null); });
+    i.click();
+  });
+}
+
+async function verkleinern(datei, max, quadrat) {
+  const url = URL.createObjectURL(datei);
+  try {
+    const bild = await new Promise((gut, schlecht) => {
+      const b = new Image();
+      b.onload = () => gut(b); b.onerror = () => schlecht(new Error('Das Bild lässt sich nicht lesen'));
+      b.src = url;
+    });
+    let sb = bild.naturalWidth, sh = bild.naturalHeight, sx = 0, sy = 0;
+    if (quadrat) { const s = Math.min(sb, sh); sx = (sb - s) / 2; sy = (sh - s) / 2; sb = sh = s; }
+    const f = Math.min(1, max / Math.max(sb, sh)), b = Math.round(sb * f), h = Math.round(sh * f);
+    const leinwand = document.createElement('canvas');
+    leinwand.width = b; leinwand.height = h;
+    leinwand.getContext('2d').drawImage(bild, sx, sy, sb, sh, 0, 0, b, h);
+    const blob = await new Promise(gut => leinwand.toBlob(gut, 'image/jpeg', 0.82));
+    if (!blob) throw new Error('Das Bild lässt sich nicht verkleinern');
+    return blob;
+  } finally { URL.revokeObjectURL(url); }
+}
+
+async function bildWaehlen(kamera, max, quadrat) {
+  const datei = await dateiWaehlen(kamera);
+  if (!datei) return null;
+  try { return await verkleinern(datei, max, quadrat); }
+  catch (e) { melde(e.message); return null; }
+}
+
+// ------------------------------------------------------------ Aufgaben
+
+function erledige(a, foto) {
+  const sofort = a.art === 'irgendwann' || eltern(), p = PUNKTE[a.art];
+  return tun(() => B.aufgabeErledigen(a.id, foto), {
+    zu: true,
+    lokal: () => {
+      a.status = sofort ? 'erledigt' : 'wartet';
+      if (foto) a.foto_pfad = foto;
+      if (sofort && p) punkteLokal(a.fuer, p);
+      eben(a.id);
+    },
+    ok: !sofort ? 'Wartet auf Bestätigung' : p ? `Erledigt, +${p} ${p > 1 ? 'Punkte' : 'Punkt'}` : 'Erledigt',
+  });
+}
+
+A.abhaken = id => {
+  const a = aufgabe(id);
+  if (!a) return;
+  if (a.status === 'offen') {
+    if (a.fuer !== S.ich) return melde(`Das ist die Aufgabe von ${P(a.fuer).name}`);
+    if (a.foto_pflicht && !a.foto_pfad) return A.mitFoto(id);
+    return erledige(a, null);
+  }
+  if (a.status === 'wartet') {
+    if (!eltern()) return melde('Ein Elternteil muss noch bestätigen');
+    if (a.fuer === S.ich) return melde('Das bestätigt das andere Elternteil');
+    return A.bestaetige(id);
+  }
+};
+
+A.mitFoto = async id => {
+  const a = aufgabe(id);
+  if (!a) return;
+  const bild = await bildWaehlen(true, 1600, false);
+  if (!bild) return;
+  melde('Foto wird hochgeladen …');
+  try { await erledige(a, await B.fotoHoch('beweise', bild, S.ich)); }
+  catch (e) { melde(e.message); }
+};
+
+A.bestaetige = (id, punkte) => {
+  const a = aufgabe(id);
+  if (!a) return;
+  const p = a.art === 'frei' ? (punkte || 1) : PUNKTE[a.art];
+  return tun(() => B.aufgabeBestaetigen(id, punkte), {
+    zu: true, ok: `Bestätigt, +${p} für ${P(a.fuer).name}`,
+    lokal: () => { a.status = 'erledigt'; punkteLokal(a.fuer, p); eben(id); },
+  });
+};
+
+A.zurueckgeben = id => {
+  const a = aufgabe(id);
+  if (!a) return;
+  return tun(() => B.aufgabeZurueck(id), {
+    zu: true, ok: a.art === 'frei' ? 'Nicht anerkannt' : `${P(a.fuer).name} muss noch einmal ran`,
+    lokal: () => { a.status = a.art === 'frei' ? 'abgelehnt' : 'offen'; },
+  });
+};
+
+A.morgen = id => {
+  const a = aufgabe(id);
+  if (!a) return;
+  return tun(() => B.aufgabeVerschieben(id), {
+    zu: true, ok: 'Auf morgen verschoben',
+    lokal: () => { a.faellig = plus(a.faellig, 1); a.verschoben = true; },
+  });
+};
+
+A.loeschAufgabe = id => {
+  if (S.sheet && !S.sheet.sicher) { S.sheet.sicher = true; return render(); }
+  return tun(() => B.aufgabeLoeschen(id), {
+    zu: true, ok: 'Aufgabe gelöscht',
+    lokal: () => { S.d.aufgaben = S.d.aufgaben.filter(a => a.id !== id); },
+  });
+};
+
+A.auf = id => {
+  const a = aufgabe(id);
+  if (!a) return;
+  const blatt = S.sheet = { k: 'aufgabe', id, foto: null, sicher: false };
+  render();
+  if (a.foto_pfad) B.fotoUrl(a.foto_pfad).then(u => { if (S.sheet === blatt) { blatt.foto = u; render(); } }).catch(() => {});
+};
+
+function ladeVorschlaege() {
+  const s = S.sheet;
+  if (!s || s.k !== 'neu' || s.art !== 'tag' || !eltern()) return;
+  const fuer = s.fuer;
+  B.vorschlaege(fuer).then(v => { if (S.sheet === s && s.fuer === fuer) { s.vor = v; render(); } }).catch(() => {});
+}
+
+A.neuAuf = () => {
+  const art = S.seg, kinder = S.d.mitglieder.filter(m => m.rolle === 'kind');
+  const fuer = art === 'irgendwann' ? S.ich : (kinder.find(m => m.id !== S.ich) || kinder[0] || ich()).id;
+  S.sheet = { k: 'neu', art, fuer, t: '', wann: 'heute', foto: false, tage: 7, vor: [] };
+  render();
+  ladeVorschlaege();
+};
+A.neuFuer = id => { if (!S.sheet) return; S.sheet.fuer = id; S.sheet.vor = []; render(); ladeVorschlaege(); };
+A.vorschlagNehmen = t => {
+  if (!S.sheet) return;
+  S.sheet.t = t;
+  const feld = document.getElementById('neu-t');
+  if (feld) feld.value = t;
+  render();
+};
+A.neuAufgabe = () => {
+  const s = S.sheet, titel = (s.t || '').trim();
+  if (!titel) return melde('Schreib kurz, was zu tun ist');
+  const faellig = s.art === 'tag' ? (s.wann === 'morgen' ? plus(heute(), 1) : heute()) : null;
+  return tun(() => B.aufgabeAnlegen({ titel, art: s.art, fuer: s.fuer, faellig, foto_pflicht: s.art !== 'irgendwann' && s.foto, erinnerung_tage: s.tage }),
+    { zu: true, ok: s.fuer === S.ich ? 'Eingetragen' : `Aufgabe für ${P(s.fuer).name} eingetragen` });
+};
+
+A.freiAuf = () => geh({ sheet: { k: 'frei', t: '' } });
+A.neuFrei = () => {
+  const titel = (S.sheet.t || '').trim();
+  if (!titel) return melde('Schreib kurz, was du gemacht hast');
+  return tun(() => B.aufgabeAnlegen({ titel, art: 'frei', fuer: S.ich }), { zu: true, ok: 'Eingetragen. Wartet auf Bestätigung.' });
+};
+
+A.jokerAuf = () => {
+  if (S.d.jokerHeute.includes(S.ich)) return melde('Heute hast du schon einen Joker eingelöst');
+  return geh({ sheet: { k: 'joker' } });
+};
+A.jokerEin = () => tun(() => B.jokerEinloesen(), {
+  zu: true, ok: 'Joker eingelöst. Heute hast du frei.',
+  lokal: () => {
+    const b = S.d.best.find(x => x.mitglied_id === S.ich), h = heute();
+    if (b && b.joker > 0) b.joker--;
+    S.d.jokerHeute.push(S.ich);
+    S.d.aufgaben.forEach(a => { if (a.fuer === S.ich && a.art === 'tag' && a.status === 'offen' && a.faellig === h) a.status = 'entfallen'; });
+  },
+});
+
+A.verlaufAuf = id => {
+  const blatt = S.sheet = { k: 'verlauf', id, log: null };
+  render();
+  B.punkteVerlauf(id).then(l => { if (S.sheet === blatt) { blatt.log = l; render(); } })
+    .catch(() => { if (S.sheet === blatt) { blatt.log = []; render(); } });
+};
+
+// ------------------------------------------------------------ Einkauf
+
+const kauf = id => S.d.einkauf.find(k => k.id === id);
+
+A.kaufNeu = () => {
+  const titel = (S.kaufT || '').trim(), menge = (S.kaufM || '').trim();
+  if (!titel) return;
+  const status = eltern() ? 'liste' : 'vorschlag';
+  S.kaufT = S.kaufM = '';
+  for (const id of ['kauf', 'menge']) { const feld = document.getElementById(id); if (feld) feld.value = ''; }
+  return tun(() => B.einkaufNeu({ titel, menge, status, von: S.ich }), {
+    ok: eltern() ? 'Auf die Liste gesetzt' : 'Vorgeschlagen',
+    lokal: () => { S.d.einkauf.push({ id: 'neu' + Date.now(), titel, menge, status, von: S.ich, grund: null }); },
+  });
+};
+A.kaufJa = id => { const k = kauf(id); if (k) return tun(() => B.einkaufSetzen(id, { status: 'liste' }), { ok: 'Auf die Liste gesetzt', lokal: () => { k.status = 'liste'; } }); };
+A.kaufNeinAuf = id => geh({ sheet: { k: 'nein', id, grund: '' } });
+A.kaufNein = fest => {
+  const s = S.sheet, k = kauf(s.id), grund = (fest || s.grund || '').trim();
+  if (!k) return A.zu();
+  return tun(() => B.einkaufSetzen(s.id, { status: 'abgelehnt', grund: grund || null }), { zu: true, ok: 'Abgelehnt', lokal: () => { k.status = 'abgelehnt'; k.grund = grund; } });
+};
+A.kaufUm = id => {
+  const k = kauf(id);
+  if (!k) return;
+  if (!eltern()) return melde('Abhaken können nur Eltern');
+  const neu = k.status === 'gekauft' ? 'liste' : 'gekauft';
+  return tun(() => B.einkaufSetzen(id, { status: neu }), { lokal: () => { k.status = neu; if (neu === 'gekauft') eben(id); } });
+};
+A.kaufAuf = id => { const k = kauf(id); if (k && eltern()) return geh({ sheet: { k: 'kauf', id, menge: k.menge || '' } }); };
+A.kaufMenge = () => {
+  const s = S.sheet, k = kauf(s.id), menge = (s.menge || '').trim();
+  if (!k) return A.zu();
+  return tun(() => B.einkaufSetzen(s.id, { menge }), { zu: true, lokal: () => { k.menge = menge; } });
+};
+A.kaufWeg = id => tun(() => B.einkaufLoeschen(id), { zu: true, lokal: () => { S.d.einkauf = S.d.einkauf.filter(k => k.id !== id); } });
+
+// ------------------------------------------------------------ Kalender
+
+const zweistellig = n => String(n).padStart(2, '0');
+
+A.woche = n => geh({ tag: plus(S.tag, 7 * n) });
+A.tagWahl = t => geh({ tag: t });
+
+A.terminAuf = id => {
+  const e = id && S.d.termine.find(x => x.id === id);
+  if (e) {
+    const b = new Date(e.beginn);
+    S.sheet = { k: 'termin', id, t: e.titel, datum: iso(b), zeit: `${zweistellig(b.getHours())}:${zweistellig(b.getMinutes())}`, ganztags: e.ganztags,
+      fuer: [...e.fuer], erinnerung: e.erinnerung_min == null ? '' : String(e.erinnerung_min), wdh: e.wiederholung || 'nie', sicher: false };
+  } else {
+    S.sheet = { k: 'termin', id: null, t: '', datum: S.tab === 'kalender' ? S.tag : heute(), zeit: '16:00', ganztags: false,
+      fuer: [S.ich], erinnerung: '1440', wdh: 'nie', sicher: false };
+  }
+  render();
+};
+A.terminFuer = id => {
+  const f = S.sheet.fuer, i = f.indexOf(id);
+  if (i >= 0) f.splice(i, 1); else f.push(id);
+  render();
+};
+A.terminSpeichern = () => {
+  const s = S.sheet, titel = (s.t || '').trim();
+  if (!titel) return melde('Wie heißt der Termin?');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s.datum || '')) return melde('An welchem Tag?');
+  if (!s.fuer.length) return melde('Für wen ist der Termin?');
+  const [j, m, t] = s.datum.split('-').map(Number);
+  const [st, mi] = (s.ganztags ? '00:00' : (s.zeit || '00:00')).split(':').map(Number);
+  const beginn = new Date(j, m - 1, t, st || 0, mi || 0).toISOString();
+  return tun(() => B.terminSpeichern({ id: s.id, titel, beginn, ganztags: !!s.ganztags, fuer: s.fuer, wiederholung: s.wdh,
+    erinnerung_min: s.erinnerung === '' ? null : Number(s.erinnerung), von: S.ich }),
+    { zu: true, ok: s.id ? 'Gespeichert' : 'Termin eingetragen', lokal: () => { S.tag = s.datum; } });
+};
+A.terminWeg = () => {
+  const s = S.sheet;
+  if (!s.sicher) { s.sicher = true; return render(); }
+  return tun(() => B.terminLoeschen(s.id), { zu: true, ok: 'Termin gelöscht', lokal: () => { S.d.termine = S.d.termine.filter(e => e.id !== s.id); } });
+};
+
+// ------------------------------------------------------------ Dran denken
+
+A.merkAuf = () => geh({ sheet: { k: 'merk', t: '', datum: '' } });
+A.merkNeu = () => {
+  const s = S.sheet, titel = (s.t || '').trim();
+  if (!titel) return melde('Woran soll die Familie denken?');
+  return tun(() => B.merkNeu({ titel, erinnern_am: s.datum || null, von: S.ich }), { zu: true, ok: 'Notiert' });
+};
+A.merkUm = id => {
+  const m = S.d.merk.find(x => x.id === id);
+  if (!m) return;
+  const neu = !m.erledigt;
+  return tun(() => B.merkSetzen(id, { erledigt: neu }), { lokal: () => { m.erledigt = neu; if (neu) eben(id); } });
+};
+
+// ------------------------------------------------------------ Sparschweine
+
+const schwein = id => S.d.schweine.find(p => p.id === id);
+
+function ladeBuchungen() {
+  const s = S.sheet;
+  if (!s || s.k !== 'schwein') return;
+  B.buchungen(s.id).then(l => { if (S.sheet === s) { s.log = l; render(); } }).catch(() => {});
+}
+A.schweinAuf = id => { S.sheet = { k: 'schwein', id, weg: 'bar', log: null, sicher: false }; render(); ladeBuchungen(); };
+
+async function buche(cent, text) {
+  const s = S.sheet, p = schwein(s.id);
+  if (!p) return;
+  const weg = cent < 0 ? 'bar' : s.weg;
+  await tun(() => B.buchen({ schwein_id: s.id, mitglied_id: S.ich, betrag_cent: cent, weg }), {
+    ok: text,
+    lokal: () => {
+      p.stand_cent += cent;
+      if (s.log) s.log.unshift({ id: 'neu' + Date.now(), mitglied_id: S.ich, betrag_cent: cent, weg, am: new Date().toISOString() });
+    },
+  });
+  ladeBuchungen();
+}
+function betragLesen() {
+  const feld = document.getElementById('betrag');
+  return { feld, cent: centAus(feld ? feld.value : '') };
+}
+A.einzahlen = cent => buche(cent, `${euro(cent)} eingezahlt`);
+A.eigener = () => {
+  const { feld, cent } = betragLesen();
+  if (!(cent > 0)) return melde('Trag einen Betrag ein, z. B. 7,50');
+  if (cent > 1000000) return melde('Der Betrag ist zu groß');
+  feld.value = '';
+  return buche(cent, `${euro(cent)} eingezahlt`);
+};
+A.entnehmen = () => {
+  const { feld, cent } = betragLesen(), p = schwein(S.sheet.id);
+  if (!p) return;
+  if (!(cent > 0)) return melde('Trag oben den Betrag ein');
+  if (cent > p.stand_cent) return melde('So viel ist nicht im Sparschwein');
+  feld.value = '';
+  return buche(-cent, `${euro(cent)} herausgenommen`);
+};
+A.aufbrechen = () => {
+  const s = S.sheet, p = schwein(s.id);
+  if (!p) return A.zu();
+  if (!s.sicher) { s.sicher = true; return render(); }
+  return tun(() => B.schweinAufbrechen(s.id), {
+    zu: true, ok: `${p.name} aufgebrochen: ${euro(p.stand_cent)}`,
+    lokal: () => { S.d.schweine = S.d.schweine.filter(x => x.id !== s.id); },
+  });
+};
+A.neuSchweinAuf = () => geh({ sheet: { k: 'neuschwein', t: '', ziel: '' } });
+A.neuSchwein = () => {
+  const s = S.sheet, name = (s.t || '').trim();
+  if (!name) return melde('Gib dem Sparschwein einen Namen');
+  let ziel = null;
+  if ((s.ziel || '').trim()) {
+    ziel = centAus(s.ziel);
+    if (!(ziel > 0)) return melde('Das Sparziel verstehe ich nicht. Schreib z. B. 300');
+  }
+  return tun(() => B.schweinNeu({ name, ziel_cent: ziel, von: S.ich }), { zu: true, ok: 'Sparschwein angelegt' });
+};
+A.ibanKopieren = async () => {
+  try { await navigator.clipboard.writeText((S.d.info.iban || '').replace(/\s/g, '')); melde('IBAN kopiert'); }
+  catch { melde('Kopieren geht hier nicht. Tipp die IBAN bitte ab.'); }
+};
+
+// ------------------------------------------------------------ Einstellungen
+
+const meinEintrag = () => S.d.mitglieder.find(m => m.id === S.ich);
+
+A.einstAuf = () => geh({ sheet: { k: 'einst' } });
+A.setzTier = t => { const m = meinEintrag(); if (m) return tun(() => B.profilAendern({ tier: t, bild_pfad: '' }), { lokal: () => { m.tier = t; m.bild_pfad = null; } }); };
+A.setzFarbe = f => { const m = meinEintrag(); if (m) return tun(() => B.profilAendern({ farbe: f }), { lokal: () => { m.farbe = f; } }); };
+A.setzFoto = async () => {
+  const m = meinEintrag(), bild = m && await bildWaehlen(false, 400, true);
+  if (!bild) return;
+  melde('Foto wird gespeichert …');
+  try {
+    const pfad = await B.fotoHoch('profilbilder', bild, S.ich);
+    await tun(() => B.profilAendern({ bild_pfad: pfad }), { ok: 'Foto gespeichert', lokal: () => { m.bild_pfad = pfad; } });
+  } catch (e) { melde(e.message); }
+};
+A.pushUm = k => {
+  const m = meinEintrag();
+  if (!m) return;
+  const neu = { ...(m.mitteilungen || {}) };
+  neu[k] = neu[k] === false;                          // aus -> an, sonst -> aus
+  return tun(() => B.profilAendern({ mitteilungen: neu }), { lokal: () => { m.mitteilungen = neu; } });
+};
+A.codeAuf = () => geh({ sheet: { k: 'code', fuer: S.ich, pin: '' } });
+A.codeSetzen = () => {
+  const s = S.sheet;
+  if (!/^\d{4}$/.test(s.pin || '')) return melde('Der Code braucht genau 4 Ziffern');
+  return tun(() => B.codeSetzen(s.fuer, s.pin), { zu: true, ok: s.fuer === S.ich ? 'Dein Code ist geändert' : `Neuer Code für ${P(s.fuer).name} gespeichert` });
+};
+A.abmelden = async () => {
+  try { await B.abmelden(); } catch (e) { return melde(e.message); }
+  await raus();
+};
+A.postGelesen = () => tun(() => B.postGelesen(), { lokal: () => { S.d.post = []; } });

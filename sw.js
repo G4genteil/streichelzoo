@@ -1,0 +1,27 @@
+// Service Worker: hält die App-Dateien bereit, damit sie auch bei schlechtem Netz startet.
+// Regel: erst das Netz fragen (so kommen Updates sofort an), nach 3 Sekunden oder ohne Netz den gemerkten Stand nehmen.
+// Daten von Supabase laufen nicht hierüber. Bei jeder Änderung an der Dateiliste VERSION hochzählen.
+const VERSION = 'zoo-1';
+const DATEIEN = ['./', 'index.html', 'manifest.webmanifest', 'css/app.css',
+  'js/main.js', 'js/kern.js', 'js/zustand.js', 'js/hilfen.js', 'js/ansichten.js', 'js/aktionen.js', 'js/backend.js', 'js/demo.js', 'js/config.js',
+  'vendor/idiomorph.js', 'vendor/supabase.js', 'icons/logo.webp', 'icons/joker.webp', 'icons/apple-touch-icon.png', 'icons/icon-192.png'];
+
+self.addEventListener('install', e => {
+  e.waitUntil(caches.open(VERSION).then(c => c.addAll(DATEIEN)).then(() => self.skipWaiting()));
+});
+
+self.addEventListener('activate', e => {
+  e.waitUntil(caches.keys().then(alle => Promise.all(alle.filter(k => k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim()));
+});
+
+self.addEventListener('fetch', e => {
+  const url = new URL(e.request.url);
+  if (e.request.method !== 'GET' || url.origin !== self.location.origin) return;
+  const gemerkt = () => caches.match(e.request, { ignoreSearch: true }).then(r => r || caches.match('index.html'));
+  const netz = fetch(e.request).then(antwort => {
+    if (antwort.ok) { const kopie = antwort.clone(); caches.open(VERSION).then(c => c.put(e.request, kopie)); }
+    return antwort;
+  });
+  const zuLangsam = new Promise(fertig => setTimeout(fertig, 3000)).then(() => gemerkt().then(r => r || netz));
+  e.respondWith(Promise.race([netz.catch(gemerkt), zuLangsam]));
+});
