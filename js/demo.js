@@ -31,6 +31,11 @@ export function demoBackend() {
     aufgabe('Alte Kleidung aussortieren', 'irgendwann', 'm4'), aufgabe('Regal im Flur anbringen', 'irgendwann', 'm2'),
     aufgabe('Fotos vom Urlaub sortieren', 'irgendwann', 'm1'),
   ];
+  let SERIEN = [
+    { id: 'r1', titel: 'Spülmaschine ausräumen', art: 'tag', fuer: 'm4', von: 'm1', tage: [1, 2, 3, 4, 5, 6, 7], foto_pflicht: false },
+    { id: 'r2', titel: 'Zimmer saugen', art: 'tag', fuer: 'm3', von: 'm1', tage: [3, 6], foto_pflicht: true },
+    { id: 'r3', titel: 'Keller aufräumen', art: 'woche', fuer: 'm4', von: 'm2', tage: [1, 2, 3, 4, 5, 6, 7], foto_pflicht: false },
+  ];
   const PKT = [];
   const punkt = (m, wert, grund, a, tageHer = 0) => PKT.push({ mitglied_id: m, wert, grund, am: new Date(Date.now() - tageHer * 864e5).toISOString(), aufgaben: a ? { titel: a } : null, woche: tageHer === 0 });
   [['m1', 4], ['m2', 2], ['m3', 6], ['m4', 5]].forEach(([m, n]) => { for (let i = 0; i < n; i++) punkt(m, 1, 'erledigt', 'Tagesaufgabe'); });
@@ -66,14 +71,19 @@ export function demoBackend() {
   const buche = (s, m, cent, tageHer, weg = 'bar') => BUCH.push({ id: neuId(), schwein_id: s, mitglied_id: m, betrag_cent: cent, weg, am: new Date(Date.now() - tageHer * 864e5).toISOString() });
   buche('s1', 'm2', 10000, 17, 'ueberweisung'); buche('s1', 'm4', 2500, 11); buche('s1', 'm1', 5000, 4); buche('s1', 'm1', 16500, 30);
   buche('s2', 'm3', 1000, 13); buche('s2', 'm2', 2550, 6); buche('s2', 'm2', 9000, 25); buche('s3', 'm1', 8000, 9);
-  const POST = { m1: [], m2: [], m3: [{ id: neuId(), art: 'einkauf', titel: 'Vorschlag abgelehnt', inhalt: 'Energy-Drinks: Zu viel Zucker', created_at: jetzt() }],
-    m4: [{ id: neuId(), art: 'bestaetigt', titel: 'Bestätigt, +1 Punkt', inhalt: 'Tisch abräumen', created_at: jetzt() }] };
+  const POST = { m1: [], m2: [], m3: [{ id: neuId(), art: 'einkauf', titel: 'Vorschlag abgelehnt', inhalt: 'Energy-Drinks: Zu viel Zucker', ziel: 'einkauf', created_at: jetzt() }],
+    m4: [{ id: neuId(), art: 'bestaetigt', titel: 'Bestätigt, +1 Punkt', inhalt: 'Tisch abräumen', ziel: 'aufgaben', created_at: jetzt() }] };
+  const OFT = ['Milch', 'Brot', 'Eier', 'Butter', 'Äpfel', 'Bananen', 'Nudeln', 'Haferflocken', 'Käse', 'Joghurt', 'Spülmittel', 'Toilettenpapier', 'Tomaten', 'Kaffee'];
+  // Die Woche davor ist schon ausgewertet: Linus hat gewonnen.
+  const ENDSTAND = { woche: plus(wocheEnde(), -14), reihen: [
+    { mitglied_id: 'm1', punkte: 9, platz: 3, joker: false }, { mitglied_id: 'm2', punkte: -2, platz: 4, joker: false },
+    { mitglied_id: 'm3', punkte: 14, platz: 1, joker: true }, { mitglied_id: 'm4', punkte: 11, platz: 2, joker: false }] };
 
   const eltern = () => (M.find(m => m.id === ichId) || {}).rolle === 'eltern';
   const name = id => (M.find(m => m.id === id) || {}).name || 'Jemand';
   const stand = s => BUCH.filter(b => b.schwein_id === s).reduce((n, b) => n + b.betrag_cent, 0);
-  const anEltern = (ausser, art, titel, inhalt) => M.filter(m => m.rolle === 'eltern' && m.id !== ausser).forEach(m => POST[m.id].unshift({ id: neuId(), art, titel, inhalt, created_at: jetzt() }));
-  const an = (wen, art, titel, inhalt) => POST[wen] && POST[wen].unshift({ id: neuId(), art, titel, inhalt, created_at: jetzt() });
+  const anEltern = (ausser, art, titel, inhalt, ziel = null) => M.filter(m => m.rolle === 'eltern' && m.id !== ausser).forEach(m => POST[m.id].unshift({ id: neuId(), art, titel, inhalt, ziel, created_at: jetzt() }));
+  const an = (wen, art, titel, inhalt, ziel = null) => POST[wen] && POST[wen].unshift({ id: neuId(), art, titel, inhalt, ziel, created_at: jetzt() });
   const finde = id => AUF.find(a => a.id === id) || nein('Diese Aufgabe gibt es nicht mehr');
 
   return {
@@ -107,7 +117,8 @@ export function demoBackend() {
         woche: PKT.filter(p => p.mitglied_id === m.id && p.woche).reduce((n, p) => n + p.wert, 0),
         gesamt: PKT.filter(p => p.mitglied_id === m.id).reduce((n, p) => n + p.wert, 0) }));
       return kopie({ mitglieder: M, aufgaben: AUF, best, jokerHeute: JOKER_HEUTE, einkauf: KAUF, termine: TERM, merk: MERK,
-        schweine: SCHW.map(s => ({ ...s, stand_cent: stand(s.id) })), post: POST[ichId] || [], info: { iban: 'DE00 0000 0000 0000 0000 00', empfaenger: 'Demo-Konto' } });
+        schweine: SCHW.map(s => ({ ...s, stand_cent: stand(s.id) })), post: POST[ichId] || [], info: { iban: 'DE00 0000 0000 0000 0000 00', empfaenger: 'Demo-Konto' },
+        serien: SERIEN, endstand: ENDSTAND });
     },
     beobachten() {}, nichtBeobachten() {},
 
@@ -132,8 +143,41 @@ export function demoBackend() {
       if (foto) a.foto_pfad = foto;
       a.erledigt_am = jetzt();
       if (a.art === 'irgendwann' || eltern()) { a.status = 'erledigt'; if (PUNKTE[a.art]) punkt(ichId, PUNKTE[a.art], 'erledigt', a.titel); return 'erledigt'; }
-      a.status = 'wartet'; anEltern(ichId, 'erledigt', `${name(ichId)} hat eine Aufgabe erledigt`, a.titel); return 'wartet';
+      a.status = 'wartet'; anEltern(ichId, 'erledigt', `${name(ichId)} hat eine Aufgabe erledigt`, a.titel, 'aufgabe:' + a.id); return 'wartet';
     },
+    async aufgabeWiederoeffnen(id) {
+      await warte();
+      const a = finde(id);
+      if (a.fuer !== ichId) nein('Das ist nicht deine Aufgabe');
+      if (a.art === 'frei' || !(a.status === 'wartet' || (a.status === 'erledigt' && !a.bestaetigt_von))) nein('Das lässt sich nicht mehr zurücknehmen');
+      if (a.status === 'erledigt' && PUNKTE[a.art]) { const i = PKT.findIndex(p => p.mitglied_id === ichId && p.aufgaben && p.aufgaben.titel === a.titel); if (i >= 0) PKT.splice(i, 1); }
+      a.status = 'offen'; a.erledigt_am = null;
+      M.forEach(m => { POST[m.id] = (POST[m.id] || []).filter(p => p.ziel !== 'aufgabe:' + id || p.art !== 'erledigt'); });
+    },
+    async alleBestaetigen() {
+      await warte();
+      if (!eltern()) nein('Bestätigen können nur Eltern');
+      const offen = AUF.filter(a => a.status === 'wartet' && a.fuer !== ichId);
+      offen.forEach(a => { a.status = 'erledigt'; a.bestaetigt_von = ichId; punkt(a.fuer, PUNKTE[a.art], 'erledigt', a.titel); });
+      for (const m of new Set(offen.map(a => a.fuer))) {
+        const seine = offen.filter(a => a.fuer === m), p = seine.reduce((n, a) => n + PUNKTE[a.art], 0);
+        if (seine.length === 1) an(m, 'bestaetigt', `Bestätigt, +${p} ${p === 1 ? 'Punkt' : 'Punkte'}`, seine[0].titel, 'aufgabe:' + seine[0].id);
+        else an(m, 'bestaetigt', `${seine.length} Aufgaben bestätigt, +${p} Punkte`, '', 'aufgaben');
+      }
+      return offen.length;
+    },
+    async serieAnlegen(s) {
+      await warte();
+      if (!eltern()) nein('Das können nur Eltern eintragen');
+      const tage = s.tage && s.tage.length ? s.tage : [1, 2, 3, 4, 5, 6, 7], wt = new Date().getDay() || 7;
+      if (s.art === 'tag' && s.tage && !s.tage.length) nein('Wähle mindestens einen Wochentag');
+      const serie = { id: neuId(), titel: s.titel, art: s.art, fuer: s.fuer, von: ichId, tage, foto_pflicht: !!s.foto_pflicht };
+      SERIEN.push(serie);
+      if (s.art === 'woche' || (tage.includes(wt) && !JOKER_HEUTE.includes(s.fuer))) {
+        AUF.push(aufgabe(s.titel, s.art, s.fuer, 'offen', { von: ichId, foto_pflicht: !!s.foto_pflicht, serie_id: serie.id }));
+      }
+    },
+    async serieLoeschen(id) { if (!eltern()) nein('Das darfst du nicht'); SERIEN = SERIEN.filter(s => s.id !== id); },
     async aufgabeBestaetigen(id, punkte) {
       await warte();
       const a = finde(id);
@@ -180,6 +224,14 @@ export function demoBackend() {
       if (vorher === 'vorschlag' && k.status !== 'vorschlag') an(k.von, 'einkauf', k.status === 'liste' ? 'Kommt auf die Einkaufsliste' : 'Vorschlag abgelehnt', k.titel + (k.grund ? ': ' + k.grund : ''));
     },
     async einkaufLoeschen(id) { KAUF = KAUF.filter(k => k.id !== id); },
+    async einkaufHaeufig() { await warte(); return [...OFT]; },
+    async einkaufAufraeumen() {
+      if (!eltern()) nein('Das darfst du nicht');
+      const weg = KAUF.filter(k => k.status === 'gekauft');
+      weg.forEach(k => { k.status = 'archiv'; });
+      return weg.map(k => k.id);
+    },
+    async einkaufZurueckholen(ids) { KAUF.forEach(k => { if (ids.includes(k.id)) k.status = 'gekauft'; }); },
 
     async terminSpeichern(t) {
       await warte();

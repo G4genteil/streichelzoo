@@ -2,7 +2,8 @@
 // Muster: erst die Anzeige sofort anpassen ("lokal"), dann den Server fragen, dann den echten Stand nachladen.
 // Lehnt der Server ab, zeigt das Nachladen wieder die Wahrheit.
 import { S, P, ich, eltern, leer } from './zustand.js';
-import { render, zeichne, geh, melde } from './kern.js';
+import { render, zeichne, geh, melde, konfetti } from './kern.js';
+import { termineAm, feierPlan } from './ansichten.js';
 import { heute, plus, iso, euro, centAus, PUNKTE, TIERE, FARBEN } from './hilfen.js';
 
 export const A = {};
@@ -10,6 +11,8 @@ let B = null;                      // die Verbindung (backend.js oder demo.js)
 let gestartet = false;             // hat B.start() schon einmal geklappt?
 let zuletzt = 0, ladeNr = 0, uhrLive = 0;
 let VAPID = '';
+let bereit = false;                // sind die Daten nach dem Anmelden einmal frisch geladen?
+let offenesZiel = null;            // wohin eine angetippte Push-Nachricht führen soll, sobald die Daten da sind
 
 // ------------------------------------------------------------ Merken auf dem Gerät
 
@@ -38,21 +41,25 @@ async function laden() {
     const wer = await B.wer().catch(() => S.ich);
     if (!wer) return raus('Bitte melde dich noch einmal an');   // z. B. hat ein Elternteil den Code neu gesetzt
   }
+  for (const [id, w] of wartend) d[w.liste] = d[w.liste].filter(x => x.id !== id);   // was gerade gelöscht wird, bleibt weg
   const roh = JSON.stringify(d), hatteFehler = !!S.ladeFehler;
   S.ladeFehler = '';
-  if (roh === S.roh && !hatteFehler) return;           // nichts Neues
-  S.roh = roh; S.d = d; S.profile = d.mitglieder;
-  merkeStand();
-  render();
+  if (roh !== S.roh || hatteFehler) {
+    S.roh = roh; S.d = d; S.profile = d.mitglieder;
+    merkeStand();
+    symbol();
+    render();
+  }
+  feierPruefen();
 }
 
-async function tun(ruf, { lokal, ok, zu } = {}) {
-  if (lokal) { lokal(); S.roh = ''; }
+async function tun(ruf, { lokal, ok, zu, zurueck } = {}) {
+  if (lokal) { lokal(); S.roh = ''; symbol(); }
   if (zu) S.sheet = null;
   if (lokal || zu) render();
   try {
     const ergebnis = await ruf();
-    if (ok) melde(typeof ok === 'function' ? ok(ergebnis) : ok);
+    if (ok) melde(typeof ok === 'function' ? ok(ergebnis) : ok, { zurueck });
     await laden();
     return true;
   } catch (e) {
@@ -61,6 +68,48 @@ async function tun(ruf, { lokal, ok, zu } = {}) {
     await laden();
     return false;
   }
+}
+
+// Löschen mit Bedenkzeit: Der Eintrag verschwindet sofort, gelöscht wird erst, wenn „Rückgängig" abgelaufen ist.
+// Wird die App vorher geschlossen, bleibt der Eintrag einfach da.
+const wartend = new Map();         // id -> { liste, fertig }
+function spaeterLoeschen(liste, id, ruf, text) {
+  const eintrag = S.d[liste].find(x => x.id === id);
+  if (!eintrag) return A.zu();
+  const fertig = async () => {
+    if (!wartend.delete(id)) return;
+    clearTimeout(uhr);
+    try { await ruf(); } catch (e) { melde(e.message || 'Das hat nicht geklappt'); }
+    S.roh = '';
+    laden();
+  };
+  const uhr = setTimeout(fertig, 5500);
+  wartend.set(id, { liste, fertig });
+  S.d[liste] = S.d[liste].filter(x => x.id !== id);
+  S.roh = ''; S.sheet = null;
+  symbol();
+  render();
+  melde(text, { zurueck: () => {
+    if (!wartend.delete(id)) return;
+    clearTimeout(uhr);
+    if (!S.d[liste].some(x => x.id === id)) S.d[liste] = [...S.d[liste], eintrag];
+    S.roh = '';
+    symbol();
+    render();
+    laden();
+  } });
+}
+const jetztLoeschen = () => { for (const w of [...wartend.values()]) w.fertig(); };
+
+// Die Zahl am App-Symbol: eigene offene Tages- und Wochenaufgaben, bei Eltern dazu alles, was auf Bestätigung wartet.
+// Dieselbe Regel steht in der Datenbank (symbol_zahl), damit auch eine Push-Nachricht die Zahl richtig setzt.
+function symbol() {
+  if (!('setAppBadge' in navigator)) return;
+  const h = heute(), me = S.ich, bestaetigt = eltern();
+  const n = S.phase !== 'app' ? 0 : S.d.aufgaben.filter(a =>
+    (a.fuer === me && a.status === 'offen' && ((a.art === 'tag' && a.faellig <= h) || a.art === 'woche'))
+    || (bestaetigt && a.status === 'wartet' && a.fuer !== me)).length;
+  try { (n ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => {}); } catch { /* dann eben keine Zahl */ }
 }
 
 const eben = id => { S.frisch = { id, bis: Date.now() + 800 }; };
@@ -79,7 +128,8 @@ export async function starte(backend, vapid) {
   zeichne();
   await verbinde();
 
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) auffrischen(); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) jetztLoeschen(); else auffrischen(); });
+  window.addEventListener('pagehide', jetztLoeschen);
   window.addEventListener('online', auffrischen);
   setInterval(() => { if (!document.hidden) auffrischen(); }, 60000);
 }
@@ -101,7 +151,7 @@ async function verbinde() {
 
 function auffrischen() {
   if (!gestartet) { if (S.phase !== 'laden') verbinde(); return; }
-  if (S.phase === 'app') { zeichne(); if (Date.now() - zuletzt > 4000) laden(); }
+  if (S.phase === 'app') { zeichne(); if (Date.now() - zuletzt > 4000) laden(); else feierPruefen(); }
   else if (S.phase === 'tor') B.profile().then(p => { S.profile = p; if (S.phase === 'tor') render(); }).catch(() => {});
 }
 
@@ -110,10 +160,16 @@ async function rein() {
   render();
   await laden();
   B.beobachten(() => { clearTimeout(uhrLive); uhrLive = setTimeout(laden, 250); });
+  bereit = true;
+  ladeOft();
+  if (offenesZiel) { const z = offenesZiel; offenesZiel = null; zuZiel(z.ziel, z.art); }
 }
 
 function nachDraussen() {
-  S.ich = null; S.d = leer(); S.roh = ''; S.sheet = null; S.phase = 'tor';
+  bereit = false;
+  if (S.feier) clearTimeout(S.feier.uhr);
+  S.ich = null; S.d = leer(); S.roh = ''; S.sheet = null; S.feier = null; S.kaufOft = []; S.phase = 'tor';
+  symbol();
   lager.weg('zoo_stand');
   render();
 }
@@ -124,6 +180,7 @@ function zumCode(id) {
 }
 
 async function raus(text) {
+  jetztLoeschen();
   B.nichtBeobachten();
   S.profile = await B.profile().catch(() => S.profile);
   nachDraussen();
@@ -217,8 +274,8 @@ A.neuFertig = async () => {
 
 // ------------------------------------------------------------ Allgemeines
 
-A.geh = geh;
-A.zu = () => { if (S.sheet) geh({ sheet: null }); };
+A.geh = o => { if (o.tab === 'einkauf' && S.tab !== 'einkauf') ladeOft(); return geh(o); };
+A.zu = () => { stilleSein(); if (S.sheet) geh({ sheet: null }); };
 A.setz = (k, v) => { S[k] = v; };                                  // Entwurf auf der Seite, ohne neu zu zeichnen
 A.entwurf = (k, v) => { const ziel = S.sheet || S.neu; if (ziel) ziel[k] = v; };
 A.blattSetz = (k, v) => { if (S.sheet) { S.sheet[k] = v; render(); } };
@@ -278,6 +335,10 @@ function erledige(a, foto) {
       eben(a.id);
     },
     ok: !sofort ? 'Wartet auf Bestätigung' : p ? `Erledigt, +${p} ${p > 1 ? 'Punkte' : 'Punkt'}` : 'Erledigt',
+    zurueck: () => tun(() => B.aufgabeWiederoeffnen(a.id), {
+      ok: 'Wieder offen',
+      lokal: () => { const x = aufgabe(a.id); if (x) { x.status = 'offen'; if (sofort && p) punkteLokal(x.fuer, -p); } },
+    }),
   });
 }
 
@@ -316,6 +377,15 @@ A.bestaetige = (id, punkte) => {
   });
 };
 
+A.alleBestaetigen = () => {
+  const offen = S.d.aufgaben.filter(a => a.status === 'wartet' && a.fuer !== S.ich);
+  if (!offen.length) return;
+  return tun(() => B.alleBestaetigen(), {
+    ok: n => n === 1 ? '1 Aufgabe bestätigt' : `${n} Aufgaben bestätigt`,
+    lokal: () => offen.forEach(a => { a.status = 'erledigt'; punkteLokal(a.fuer, PUNKTE[a.art]); }),
+  });
+};
+
 A.zurueckgeben = id => {
   const a = aufgabe(id);
   if (!a) return;
@@ -334,18 +404,12 @@ A.morgen = id => {
   });
 };
 
-A.loeschAufgabe = id => {
-  if (S.sheet && !S.sheet.sicher) { S.sheet.sicher = true; return render(); }
-  return tun(() => B.aufgabeLoeschen(id), {
-    zu: true, ok: 'Aufgabe gelöscht',
-    lokal: () => { S.d.aufgaben = S.d.aufgaben.filter(a => a.id !== id); },
-  });
-};
+A.loeschAufgabe = id => spaeterLoeschen('aufgaben', id, () => B.aufgabeLoeschen(id), 'Aufgabe gelöscht');
 
 A.auf = id => {
   const a = aufgabe(id);
   if (!a) return;
-  const blatt = S.sheet = { k: 'aufgabe', id, foto: null, sicher: false };
+  const blatt = S.sheet = { k: 'aufgabe', id, foto: null };
   render();
   if (a.foto_pfad) B.fotoUrl(a.foto_pfad).then(u => { if (S.sheet === blatt) { blatt.foto = u; render(); } }).catch(() => {});
 };
@@ -360,7 +424,7 @@ function ladeVorschlaege() {
 A.neuAuf = () => {
   const art = S.seg, kinder = S.d.mitglieder.filter(m => m.rolle === 'kind');
   const fuer = art === 'irgendwann' ? S.ich : (kinder.find(m => m.id !== S.ich) || kinder[0] || ich()).id;
-  S.sheet = { k: 'neu', art, fuer, t: '', wann: 'heute', foto: false, tage: 7, vor: [] };
+  S.sheet = { k: 'neu', art, fuer, t: '', wann: 'heute', foto: false, tage: 7, vor: [], wdh: false, wtage: [1, 2, 3, 4, 5, 6, 7] };
   render();
   ladeVorschlaege();
 };
@@ -372,12 +436,59 @@ A.vorschlagNehmen = t => {
   if (feld) feld.value = t;
   render();
 };
+A.neuTag = n => {
+  const t = S.sheet && S.sheet.wtage;
+  if (!t) return;
+  const i = t.indexOf(n);
+  if (i >= 0) t.splice(i, 1); else t.push(n);
+  render();
+};
 A.neuAufgabe = () => {
   const s = S.sheet, titel = (s.t || '').trim();
   if (!titel) return melde('Schreib kurz, was zu tun ist');
+  if (s.art !== 'irgendwann' && s.wdh) {
+    if (s.art === 'tag' && !s.wtage.length) return melde('Wähle mindestens einen Wochentag');
+    return tun(() => B.serieAnlegen({ titel, art: s.art, fuer: s.fuer, tage: s.art === 'tag' ? [...s.wtage].sort((a, b) => a - b) : null, foto_pflicht: s.foto }),
+      { zu: true, ok: 'Trägt sich ab jetzt von selbst ein' });
+  }
   const faellig = s.art === 'tag' ? (s.wann === 'morgen' ? plus(heute(), 1) : heute()) : null;
   return tun(() => B.aufgabeAnlegen({ titel, art: s.art, fuer: s.fuer, faellig, foto_pflicht: s.art !== 'irgendwann' && s.foto, erinnerung_tage: s.tage }),
     { zu: true, ok: s.fuer === S.ich ? 'Eingetragen' : `Aufgabe für ${P(s.fuer).name} eingetragen` });
+};
+
+A.serieAuf = id => geh({ sheet: { k: 'serie', id } });
+A.serieWeg = id => spaeterLoeschen('serien', id, () => B.serieLoeschen(id), 'Wiederholung beendet');
+
+// ---------- Einsprechen statt tippen
+// Wo der Browser Sprache erkennt, schreibt er das Gesagte ins Feld. Wo nicht (z. B. in manchen iPhone-Apps
+// auf dem Home-Bildschirm), öffnet der Knopf die Tastatur: Deren Mikrofon-Taste kann dasselbe.
+let hoerer = null;
+const stilleSein = () => { if (hoerer) { try { hoerer.abort(); } catch { /* schon vorbei */ } } };
+
+A.sprich = id => {
+  const Erkennung = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const blatt = S.sheet, feld = document.getElementById(id);
+  if (!blatt) return;
+  if (hoerer) { try { hoerer.stop(); } catch { /* schon vorbei */ } return; }
+  const tastatur = text => { if (feld) feld.focus(); melde(text); };
+  if (!Erkennung) return tastatur('Tippe auf das Mikrofon unten auf der Tastatur');
+  const r = hoerer = new Erkennung();
+  r.lang = 'de-DE'; r.interimResults = true; r.continuous = false; r.maxAlternatives = 1;
+  r.onresult = e => {
+    if (S.sheet !== blatt) return stilleSein();
+    const text = Array.from(e.results).map(x => x[0].transcript).join(' ').replace(/\s+/g, ' ').trim();
+    blatt.t = (text.charAt(0).toUpperCase() + text.slice(1)).slice(0, 120);
+    if (feld && feld.isConnected) feld.value = blatt.t;
+    zeichne();
+  };
+  r.onerror = e => {
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') tastatur('Das Mikrofon ist hier gesperrt. Nimm das Mikrofon auf der Tastatur.');
+    else if (e.error === 'no-speech') melde('Ich habe nichts gehört');
+    else if (e.error !== 'aborted') tastatur('Das hat nicht geklappt. Nimm das Mikrofon auf der Tastatur.');
+  };
+  r.onend = () => { if (hoerer === r) hoerer = null; S.hoert = false; if (S.phase === 'app') zeichne(); };
+  try { r.start(); S.hoert = true; zeichne(); }
+  catch { hoerer = null; tastatur('Tippe auf das Mikrofon unten auf der Tastatur'); }
 };
 
 A.freiAuf = () => geh({ sheet: { k: 'frei', t: '' } });
@@ -412,6 +523,22 @@ A.verlaufAuf = id => {
 
 const kauf = id => S.d.einkauf.find(k => k.id === id);
 
+function ladeOft() {
+  B.einkaufHaeufig().then(l => { S.kaufOft = l; if (S.phase === 'app' && S.tab === 'einkauf') zeichne(); }).catch(() => {});
+}
+A.kaufTippen = t => { S.kaufT = t; zeichne(); };                   // die Vorschläge filtern mit, das Feld behält den Fokus
+A.kaufSchnell = t => { S.kaufT = t; S.kaufM = ''; return A.kaufNeu(); };
+A.kaufAufraeumen = () => {
+  const weg = S.d.einkauf.filter(k => k.status === 'gekauft');
+  if (!weg.length) return;
+  let ids = weg.map(k => k.id);
+  return tun(async () => { ids = await B.einkaufAufraeumen(); }, {
+    ok: 'Korb geleert',
+    lokal: () => weg.forEach(k => { k.status = 'archiv'; }),
+    zurueck: () => tun(() => B.einkaufZurueckholen(ids), { lokal: () => S.d.einkauf.forEach(k => { if (ids.includes(k.id)) k.status = 'gekauft'; }) }),
+  });
+};
+
 A.kaufNeu = () => {
   const titel = (S.kaufT || '').trim(), menge = (S.kaufM || '').trim();
   if (!titel) return;
@@ -443,7 +570,7 @@ A.kaufMenge = () => {
   if (!k) return A.zu();
   return tun(() => B.einkaufSetzen(s.id, { menge }), { zu: true, lokal: () => { k.menge = menge; } });
 };
-A.kaufWeg = id => tun(() => B.einkaufLoeschen(id), { zu: true, lokal: () => { S.d.einkauf = S.d.einkauf.filter(k => k.id !== id); } });
+A.kaufWeg = id => spaeterLoeschen('einkauf', id, () => B.einkaufLoeschen(id), 'Von der Liste genommen');
 
 // ------------------------------------------------------------ Kalender
 
@@ -457,10 +584,10 @@ A.terminAuf = id => {
   if (e) {
     const b = new Date(e.beginn);
     S.sheet = { k: 'termin', id, t: e.titel, datum: iso(b), zeit: `${zweistellig(b.getHours())}:${zweistellig(b.getMinutes())}`, ganztags: e.ganztags,
-      fuer: [...e.fuer], erinnerung: e.erinnerung_min == null ? '' : String(e.erinnerung_min), wdh: e.wiederholung || 'nie', sicher: false };
+      fuer: [...e.fuer], erinnerung: e.erinnerung_min == null ? '' : String(e.erinnerung_min), wdh: e.wiederholung || 'nie' };
   } else {
     S.sheet = { k: 'termin', id: null, t: '', datum: S.tab === 'kalender' ? S.tag : heute(), zeit: '16:00', ganztags: false,
-      fuer: [S.ich], erinnerung: '1440', wdh: 'nie', sicher: false };
+      fuer: [S.ich], erinnerung: '1440', wdh: 'nie' };
   }
   render();
 };
@@ -481,11 +608,7 @@ A.terminSpeichern = () => {
     erinnerung_min: s.erinnerung === '' ? null : Number(s.erinnerung), von: S.ich }),
     { zu: true, ok: s.id ? 'Gespeichert' : 'Termin eingetragen', lokal: () => { S.tag = s.datum; } });
 };
-A.terminWeg = () => {
-  const s = S.sheet;
-  if (!s.sicher) { s.sicher = true; return render(); }
-  return tun(() => B.terminLoeschen(s.id), { zu: true, ok: 'Termin gelöscht', lokal: () => { S.d.termine = S.d.termine.filter(e => e.id !== s.id); } });
-};
+A.terminWeg = () => { const id = S.sheet.id; return spaeterLoeschen('termine', id, () => B.terminLoeschen(id), 'Termin gelöscht'); };
 
 // ------------------------------------------------------------ Dran denken
 
@@ -569,6 +692,89 @@ A.neuSchwein = () => {
 A.ibanKopieren = async () => {
   try { await navigator.clipboard.writeText((S.d.info.iban || '').replace(/\s/g, '')); melde('IBAN kopiert'); }
   catch { melde('Kopieren geht hier nicht. Tipp die IBAN bitte ab.'); }
+};
+
+// ------------------------------------------------------------ Von einer Nachricht an die richtige Stelle
+
+// ziel kommt aus der Datenbank ('aufgabe:<id>', 'termin:<id>', 'einkauf', ...). Fehlt es, hilft die Art der Nachricht.
+const NACH_ART = { neu: 'aufgaben', erledigt: 'heute', bestaetigt: 'aufgaben', verpasst: 'aufgaben', erinnerung: 'heute',
+  einkauf: 'einkauf', joker: 'heute', termine: 'kalender', merk: 'merk', woche: 'woche' };
+
+function zuZiel(ziel, art) {
+  if (!bereit || S.phase !== 'app') { offenesZiel = { ziel, art }; return; }
+  const [was, id] = String(ziel || '').split(':');
+  const wohin = was || NACH_ART[art] || 'heute';
+  if (S.feier) { clearTimeout(S.feier.uhr); S.feier = null; }
+  S.sheet = null;
+  if (wohin === 'aufgabe') {
+    const a = aufgabe(id);
+    if (!a) return geh({ tab: 'aufgaben' });
+    S.tab = 'aufgaben';
+    S.seg = a.art === 'woche' ? 'woche' : a.art === 'irgendwann' ? 'irgendwann' : 'tag';
+    return A.auf(id);
+  }
+  if (wohin === 'termin') {
+    const h = heute();
+    let tag = h;
+    for (let i = 0; i < 400; i++) { const t = plus(h, i); if (termineAm(t).some(e => e.id === id)) { tag = t; break; } }
+    return geh({ tab: 'kalender', kal: 'alle', tag });
+  }
+  if (wohin === 'woche') { render(); return A.feierAuf(); }
+  if (wohin === 'einkauf') return A.geh({ tab: 'einkauf' });
+  if (wohin === 'merk') return geh({ tab: 'familie', fam: 'merk' });
+  if (wohin === 'kalender') return geh({ tab: 'kalender' });
+  if (wohin === 'aufgaben') return geh({ tab: 'aufgaben', seg: 'tag' });
+  if (wohin === 'irgendwann') return geh({ tab: 'aufgaben', seg: 'irgendwann' });
+  return geh({ tab: 'heute' });
+}
+export const oeffne = zuZiel;       // für main.js: angetippte Push-Nachricht
+A.zuPost = id => { const p = S.d.post.find(x => x.id === id); if (p) zuZiel(p.ziel, p.art); };
+
+// ------------------------------------------------------------ Wochenabschluss
+
+const feierGesehen = () => 'zoo_feier_' + S.ich;
+
+// Zeigt den Abschluss der letzten Woche einmal von selbst, sobald die App offen ist und nichts anderes im Weg steht.
+function feierPruefen() {
+  const e = S.d.endstand;
+  if (!e || S.phase !== 'app' || S.feier || S.sheet || document.hidden) return;
+  if (B.demo ? !new URLSearchParams(location.search).has('feier') || lager.lies('zoo_feier_demo') === e.woche : lager.lies(feierGesehen()) === e.woche) return;
+  feierStart(e);
+}
+
+function feierStart(e) {
+  const f = S.feier = { woche: e.woche, reihen: e.reihen, fertig: matchMedia('(prefers-reduced-motion: reduce)').matches, knall: false, uhr: 0 };
+  S.sheet = null;
+  render();
+  if (!f.fertig) f.uhr = setTimeout(() => feierKnall(f), feierPlan(f).sieg * 1000);
+}
+
+function feierKnall(f) {
+  if (S.feier !== f || f.knall) return;
+  f.knall = true;
+  const sieger = feierPlan(f).sieger.map(r => P(r.mitglied_id).farbe);
+  if (sieger.length) konfetti([...sieger, ...sieger, '#F5B841', '#FFD97A', '#FFFFFF', ...S.d.mitglieder.map(m => m.farbe)]);
+}
+
+A.feierAuf = () => { if (S.d.endstand && !S.feier) feierStart(S.d.endstand); };
+A.feierTipp = () => {                                               // Tippen springt ans Ende
+  const f = S.feier;
+  if (!f || f.fertig) return;
+  f.fertig = true;
+  clearTimeout(f.uhr);
+  render();
+  feierKnall(f);
+};
+A.feierZu = () => {
+  const f = S.feier;
+  if (!f) return;
+  clearTimeout(f.uhr);
+  lager.setz(B.demo ? 'zoo_feier_demo' : feierGesehen(), f.woche);
+  // Wer gewonnen hat, sieht die Karte auf den eigenen Stapel fliegen: dafür muss der Stapel im Bild sein.
+  const stapel = document.querySelector('.screen .stapel');
+  if (stapel && f.reihen.some(r => r.mitglied_id === S.ich && r.joker)) stapel.scrollIntoView({ block: 'center' });
+  S.feier = null;
+  render();
 };
 
 // ------------------------------------------------------------ Einstellungen

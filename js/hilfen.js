@@ -35,6 +35,7 @@ export const fmtKurz = s => F({ weekday: 'short', day: 'numeric', month: 'short'
 export const fmtDatum = s => F({ day: 'numeric', month: 'long', year: 'numeric' }).format(tagVon(s));      // 14. November 2026
 export const fmtMonat = s => F({ month: 'long', year: 'numeric' }).format(tagVon(s));                      // November 2026
 export const fmtZeit = d => F({ hour: '2-digit', minute: '2-digit' }).format(d);                           // 18:00
+export const fmtTag = s => F({ day: 'numeric', month: 'long' }).format(tagVon(s));                           // 14. November
 export const wochentagKurz = s => F({ weekday: 'short' }).format(tagVon(s)).replace('.', '');              // Sa
 
 export function relTag(s) {
@@ -58,7 +59,11 @@ export const FARBEN = [
   ['#1F9FB0', 'Türkis'], ['#2F78D0', 'Blau'], ['#7558D6', 'Flieder'], ['#A0457F', 'Pflaume'], ['#5B6B7A', 'Schiefer'],
 ];
 
+export const WOCHENTAGE = [[1, 'Mo'], [2, 'Di'], [3, 'Mi'], [4, 'Do'], [5, 'Fr'], [6, 'Sa'], [7, 'So']];   // wie in der Datenbank: 1 = Montag
+
 export const HAKEN = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3.2 3.2L13 4.8"/></svg>';
+
+export const MIKRO = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/></svg>';
 
 export const ICON = {
   heute: '<circle cx="13" cy="13" r="4.5"/><path d="M13 3v2.5M13 20.5V23M3 13h2.5M20.5 13H23M5.9 5.9l1.8 1.8M18.3 18.3l1.8 1.8M5.9 20.1l1.8-1.8M18.3 7.7l1.8-1.8"/>',

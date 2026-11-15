@@ -1,7 +1,7 @@
 // Service Worker: hält die App-Dateien bereit, damit sie auch bei schlechtem Netz startet.
 // Regel: erst das Netz fragen (so kommen Updates sofort an), nach 3 Sekunden oder ohne Netz den gemerkten Stand nehmen.
 // Daten von Supabase laufen nicht hierüber. Bei jeder Änderung an der Dateiliste VERSION hochzählen.
-const VERSION = 'zoo-3';
+const VERSION = 'zoo-4';
 const DATEIEN = ['./', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/main.js', 'js/kern.js', 'js/zustand.js', 'js/hilfen.js', 'js/ansichten.js', 'js/aktionen.js', 'js/backend.js', 'js/demo.js', 'js/config.js',
   'vendor/idiomorph.js', 'vendor/supabase.js', 'icons/logo.webp', 'icons/joker.webp', 'icons/apple-touch-icon.png', 'icons/icon-192.png'];
@@ -30,15 +30,23 @@ self.addEventListener('fetch', e => {
 self.addEventListener('push', e => {
   let n = {};
   try { n = e.data ? e.data.json() : {}; } catch { n = { titel: 'Streichelzoo', inhalt: e.data ? e.data.text() : '' }; }
-  e.waitUntil(self.registration.showNotification(n.titel || 'Streichelzoo', {
-    body: n.inhalt || '', icon: 'icons/icon-192.png', badge: 'icons/icon-192.png',
-  }));
+  const zeigen = self.registration.showNotification(n.titel || 'Streichelzoo', {
+    body: n.inhalt || '', icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', data: { ziel: n.ziel || '', art: n.art || '' },
+  });
+  // Die Zahl am App-Symbol: so viele Aufgaben sind offen (bei Eltern: plus was auf Bestätigung wartet).
+  let zahl = Promise.resolve();
+  if (typeof n.zahl === 'number' && 'setAppBadge' in self.navigator) {
+    zahl = (n.zahl > 0 ? self.navigator.setAppBadge(n.zahl) : self.navigator.clearAppBadge()).catch(() => {});
+  }
+  e.waitUntil(Promise.all([zeigen, zahl]));
 });
 
 self.addEventListener('notificationclick', e => {
   e.notification.close();
+  const d = e.notification.data || {};
   e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(offen => {
     const da = offen.find(c => c.url.startsWith(self.registration.scope));
-    return da ? da.focus() : self.clients.openWindow(self.registration.scope);
+    if (da) { da.postMessage({ zoo: 'ziel', ziel: d.ziel, art: d.art }); return da.focus(); }
+    return self.clients.openWindow(`${self.registration.scope}?zu=${encodeURIComponent(d.ziel || '')}&art=${encodeURIComponent(d.art || '')}`);
   }));
 });

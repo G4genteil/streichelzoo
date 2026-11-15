@@ -294,4 +294,101 @@ html[data-zug=rein]::view-transition-new(seite){animation-name:rein-klein;animat
 ::view-transition-old(jokerkarte):only-child{animation:karte-weg .55s cubic-bezier(.5,0,.9,.5) both}
 @keyframes karte-weg{to{transform:translateY(-130%) rotate(16deg) scale(.8);opacity:0}}
 
+/* ---------- Kurzmeldung mit „Rückgängig" ---------- */
+#toast{display:flex;align-items:center;gap:14px;width:max-content}
+#toast.mit.an{pointer-events:auto}
+#toast button{flex:none;font-weight:700;color:color-mix(in srgb,var(--wiese) 55%,var(--grund));padding:4px 2px}
+
+/* ---------- Einkauf: oft Gekauftes, Wochentage, Mikrofon ---------- */
+.chips.oft{flex-wrap:nowrap;overflow-x:auto;margin:10px -16px 0;padding:0 16px 2px;scrollbar-width:none}
+.chips.oft::-webkit-scrollbar{display:none}
+.chips.oft .chip{flex:none;font-weight:500;gap:5px}
+.chips.oft .chip span{color:var(--wiese);font-weight:700}
+.chips.wochentage{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.chips.wochentage .chip{justify-content:center;padding:10px 0}
+.chip.nur.an{background:color-mix(in srgb,var(--wiese) 14%,var(--karte))}
+.sprech{position:relative}
+.sprech .feld{padding-right:52px}
+.mikro{position:absolute;right:5px;top:50%;width:38px;height:38px;margin-top:-19px;border-radius:50%;display:grid;place-items:center;color:var(--wiese);transition:background-color .2s,color .2s,transform .22s var(--feder)}
+.mikro:active{transform:scale(.88)}
+.mikro svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.mikro.an{background:var(--wiese);color:var(--auf-wiese);animation:hoeren 1.3s ease-in-out infinite}
+@keyframes hoeren{50%{box-shadow:0 0 0 9px color-mix(in srgb,var(--wiese) 20%,transparent)}}
+
+/* ---------- Wochenabschluss ----------
+   Ein Wettlauf der Säulen, dann Krone, Karte und Konfetti. Der Grundzustand jedes Teils ist sein Endzustand:
+   Jede Animation läuft nur "von irgendwo" dorthin. So stimmt das Bild auch ohne Bewegung und nach dem Überspringen. */
+@property --zahl{syntax:'<integer>';inherits:true;initial-value:0}
+.konfetti{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:6}
+.feier{--gold:#F5B841;position:absolute;inset:0;z-index:4;background:var(--grund);display:flex;flex-direction:column;align-items:center;
+  padding:44px 20px 30px;container-type:size;overflow:hidden;text-align:center;view-transition-name:feier}
+@media (max-width:500px){ .feier{padding:calc(var(--oben) + 26px) 20px calc(var(--unten) + 18px)} }
+.feier::before{content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(120% 62% at 50% 100%,color-mix(in srgb,var(--gold) 36%,transparent),transparent 70%);animation:ein 1.4s ease var(--sieg) backwards}
+.feier:not(.hat-sieger)::before{display:none}
+.feier > *{position:relative}
+@keyframes ein{from{opacity:0}}
+.feier-ueber{color:var(--leise);font-size:15px;font-weight:600;animation:auftritt .7s cubic-bezier(.2,1.2,.35,1) backwards}
+.feier-titel{display:grid;margin-top:4px}
+.feier-titel h1{grid-area:1/1;font-size:32px}
+.t1{opacity:0;animation:sichtbar var(--sieg) linear,auftritt .7s cubic-bezier(.2,1.2,.35,1) .08s backwards,t-raus .35s ease-in var(--sieg)}
+.t2{animation:t-rein .75s cubic-bezier(.2,1.3,.35,1) calc(var(--sieg) + .25s) backwards}
+@keyframes sichtbar{from,to{opacity:1}}
+@keyframes t-raus{from{opacity:1}to{opacity:0;transform:translateY(-14px) scale(.96);filter:blur(6px)}}
+@keyframes t-rein{from{opacity:0;transform:translateY(18px) scale(.9);filter:blur(8px)}}
+
+.buehne{flex:1;min-height:0;width:100%;display:flex;justify-content:center;gap:10px;margin-top:14px}
+.saeule{flex:1;max-width:78px;min-width:0;display:flex;flex-direction:column;align-items:center;gap:8px}
+.saeule small{font-size:13px;font-weight:600;color:var(--leise);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.schacht{flex:1;min-height:0;width:100%;position:relative;overflow:hidden;container-type:size}
+.lift{--weg:max(0px,calc(var(--h) * (100cqh - 112px)));position:absolute;left:0;right:0;bottom:0;display:flex;flex-direction:column;align-items:center;gap:6px;
+  animation:steigen var(--d) cubic-bezier(.3,.45,.45,1) .9s backwards}
+@keyframes steigen{from{transform:translateY(var(--weg))}}
+.turm{display:block;width:100%;height:var(--weg);min-height:6px;border-radius:14px 14px 4px 4px;background:linear-gradient(color-mix(in srgb,var(--c) 76%,#fff),var(--c))}
+.zaehler{font-family:var(--rund);font-weight:800;font-size:20px;line-height:1;font-variant-numeric:tabular-nums;--zahl:var(--n);animation:zaehlen var(--d) linear .9s backwards}
+.zaehler.minus{color:var(--warn)}
+.zaehler::after{counter-reset:z var(--zahl);content:counter(z)}
+@keyframes zaehlen{from{--zahl:0}}
+
+.krone{position:absolute;top:-25px;z-index:1;font-size:23px;line-height:1;transform:rotate(-8deg);animation:krone .65s cubic-bezier(.3,1.7,.4,1) calc(var(--sieg) + .1s) backwards}
+@keyframes krone{from{opacity:0;transform:translateY(-36px) rotate(-40deg) scale(.3)}}
+.saeule.sieger .tier{transform:scale(1.16);box-shadow:0 0 0 5px color-mix(in srgb,var(--c) 28%,transparent);animation:sieger .7s cubic-bezier(.3,1.5,.4,1) var(--sieg) backwards}
+@keyframes sieger{0%{transform:scale(1);box-shadow:0 0 0 0 transparent}50%{transform:scale(1.36)}}
+.feier.hat-sieger .saeule:not(.sieger) .lift{opacity:.42;animation:steigen var(--d) cubic-bezier(.3,.45,.45,1) .9s backwards,blass .6s ease var(--sieg) backwards}
+@keyframes blass{from{opacity:1}}
+
+.preis{position:relative;flex:none;width:100%;height:min(32cqh,230px);display:grid;place-items:center;animation:preis-auf .9s cubic-bezier(.3,1.1,.35,1) calc(var(--sieg) + .55s) backwards}
+@keyframes preis-auf{from{height:0}}
+.strahlen{position:absolute;left:50%;top:50%;width:520px;height:520px;margin:-260px 0 0 -260px;border-radius:50%;opacity:.5;pointer-events:none;
+  background:repeating-conic-gradient(color-mix(in srgb,var(--gold) 60%,transparent) 0 10deg,transparent 10deg 20deg);
+  -webkit-mask:radial-gradient(circle,#000 8%,transparent 66%);mask:radial-gradient(circle,#000 8%,transparent 66%);
+  animation:drehen 28s linear infinite,strahl-an 1.1s ease calc(var(--sieg) + .95s) backwards}
+@keyframes drehen{to{rotate:360deg}}
+@keyframes strahl-an{from{opacity:0;scale:.3}}
+.karten-flug{height:calc(min(32cqh,230px) - 18px);aspect-ratio:538/821;animation:karte-rein 1.15s cubic-bezier(.2,1.2,.3,1) calc(var(--sieg) + .8s) backwards}
+@keyframes karte-rein{
+  from{opacity:0;transform:perspective(900px) translateY(70cqh) rotateY(-540deg) rotate(-30deg) scale(.4)}
+  30%{opacity:1}
+  to{transform:perspective(900px) translateY(0) rotateY(0deg) rotate(0deg) scale(1)}}
+.karten-ruhe{position:relative;width:100%;height:100%;transform:rotate(-4deg);animation:schweben 4.5s ease-in-out infinite}
+@keyframes schweben{50%{transform:rotate(-1.5deg) translateY(-6px)}}
+.karten-ruhe img{position:absolute;inset:0;width:100%;height:100%;filter:drop-shadow(0 14px 18px rgba(120,60,10,.35))}
+.karten-ruhe .hinten{transform:rotate(11deg) translate(16px,4px)}
+.karten-ruhe .hinten.zwei{transform:rotate(-12deg) translate(-16px,6px)}
+.glanz{position:absolute;inset:0;pointer-events:none;background:linear-gradient(105deg,transparent 42%,rgba(255,255,255,.7) 50%,transparent 58%) 150% 0/300% 100% no-repeat;
+  -webkit-mask:url(../icons/joker.webp) center/100% 100% no-repeat;mask:url(../icons/joker.webp) center/100% 100% no-repeat;
+  animation:glanz 4.5s ease-in-out calc(var(--sieg) + 1.9s) infinite}
+@keyframes glanz{0%{background-position:150% 0}26%,100%{background-position:-50% 0}}
+
+.feier-text{flex:none;font-size:16px;color:var(--leise);max-width:310px;min-height:44px;margin:12px 0 16px;animation:auftritt .7s cubic-bezier(.2,1.2,.35,1) calc(var(--sieg) + 1.3s) backwards}
+.feier-knopf{flex:none;animation:auftritt .7s cubic-bezier(.2,1.2,.35,1) calc(var(--sieg) + 1.6s) backwards}
+.feier:not(.hat-sieger) .feier-text{animation-delay:calc(var(--sieg) + .45s)}
+.feier:not(.hat-sieger) .feier-knopf{animation-delay:calc(var(--sieg) + .75s)}
+/* Übersprungen: alles steht sofort am Ende, nur das Dauerhafte (Strahlen, Schweben, Glanz) läuft weiter. */
+.feier.fertig::before,.feier.fertig *,.feier.fertig *::after{animation-delay:-60s!important}
+::view-transition-new(feier):only-child{animation:feier-auf .5s cubic-bezier(.2,.9,.25,1) both}
+::view-transition-old(feier):only-child{animation:feier-zu .32s ease-in both}
+@keyframes feier-auf{from{opacity:0;transform:scale(1.06)}}
+@keyframes feier-zu{to{opacity:0;transform:scale(.96)}}
+
 @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}

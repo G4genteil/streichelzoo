@@ -11,6 +11,7 @@ function deutsch(e) {
   if (/farbe_form|tier_kurz|bild_form/.test(m)) return 'Dieser Wert passt nicht';
   if (/betrag_grenze/.test(m)) return 'Der Betrag ist zu groß';
   if (/Anonymous sign-ins are disabled/i.test(m)) return 'In Supabase sind anonyme Anmeldungen noch ausgeschaltet';
+  if (e?.code === 'PGRST202' || e?.code === '42883' || /einkauf_status_check/.test(m)) return 'Dafür fehlt noch die Datei 05_komfort.sql in Supabase';
   console.error('Supabase:', e);
   return 'Das hat nicht geklappt' + (m ? ` (${m.slice(0, 120)})` : '');
 }
@@ -27,6 +28,8 @@ export function supabaseBackend(sb, url) {
   };
   const rpc = (name, werte) => x(sb.rpc(name, werte));
   const vor = tage => new Date(Date.now() - tage * 864e5).toISOString();
+  // Für Tabellen aus 05_komfort.sql: Solange die Datei noch nicht eingespielt ist, läuft die App ohne sie weiter.
+  const mild = anfrage => x(anfrage).catch(() => []);
   let kanal = null;
 
   return {
@@ -67,7 +70,7 @@ export function supabaseBackend(sb, url) {
     // ---------- Alles, was die App anzeigt, in einem Rutsch
     async laden() {
       const h = heute();
-      const [mitglieder, aufgaben, best, joker, einkauf, termine, merk, schweine, post, info] = await Promise.all([
+      const [mitglieder, aufgaben, best, joker, einkauf, termine, merk, schweine, post, info, serien, ergebnis] = await Promise.all([
         x(sb.from('mitglieder').select('id,name,rolle,farbe,tier,bild_pfad,mitteilungen').order('created_at')),
         x(sb.from('aufgaben').select('*').or(`status.in.(offen,wartet),faellig.gte.${plus(h, -7)},erledigt_am.gte."${vor(7)}"`).order('created_at')),
         x(sb.from('bestenliste').select('*')),
@@ -76,10 +79,15 @@ export function supabaseBackend(sb, url) {
         x(sb.from('termine').select('*').or(`wiederholung.neq.nie,beginn.gte."${vor(45)}"`).order('beginn')),
         x(sb.from('merkzettel').select('*').or(`erledigt.is.false,geaendert_am.gte."${vor(1)}"`).order('created_at')),
         x(sb.from('sparschweine_stand').select('*').is('aufgebrochen_am', null).order('created_at')),
-        x(sb.from('mitteilungen').select('id,art,titel,inhalt,created_at').eq('gelesen', false).order('created_at', { ascending: false }).limit(30)),
+        x(sb.from('mitteilungen').select('*').eq('gelesen', false).order('created_at', { ascending: false }).limit(30)),
         x(sb.from('familie_info').select('iban,empfaenger').maybeSingle()),
+        mild(sb.from('serien').select('id,titel,art,fuer,von,tage,foto_pflicht').order('created_at')),
+        mild(sb.from('wochen_ergebnis').select('woche,mitglied_id,punkte,platz,joker').order('woche', { ascending: false }).limit(12)),
       ]);
-      return { mitglieder, aufgaben, best, jokerHeute: joker.map(j => j.mitglied_id), einkauf, termine, merk, schweine, post, info: info || {} };
+      const letzte = ergebnis.length ? ergebnis[0].woche : null;
+      return { mitglieder, aufgaben, best, jokerHeute: joker.map(j => j.mitglied_id), einkauf, termine, merk, schweine, info: info || {}, serien,
+        post: post.map(p => ({ id: p.id, art: p.art, titel: p.titel, inhalt: p.inhalt, ziel: p.ziel || null, created_at: p.created_at })),
+        endstand: letzte ? { woche: letzte, reihen: ergebnis.filter(e => e.woche === letzte).map(({ woche, ...rest }) => rest) } : null };
     },
     beobachten(beiAenderung) {
       if (kanal) sb.removeChannel(kanal);
@@ -97,6 +105,10 @@ export function supabaseBackend(sb, url) {
     aufgabeZurueck: id => rpc('aufgabe_zurueckgeben', { p_id: id }),
     aufgabeVerschieben: id => rpc('aufgabe_verschieben', { p_id: id }),
     aufgabeLoeschen: id => x(sb.from('aufgaben').delete().eq('id', id)),
+    aufgabeWiederoeffnen: id => rpc('aufgabe_wiederoeffnen', { p_id: id }),
+    alleBestaetigen: () => rpc('alle_bestaetigen'),
+    serieAnlegen: s => rpc('serie_anlegen', { p_titel: s.titel, p_art: s.art, p_fuer: s.fuer, p_tage: s.tage ?? null, p_foto_pflicht: !!s.foto_pflicht }),
+    serieLoeschen: id => x(sb.from('serien').delete().eq('id', id)),
     jokerEinloesen: () => rpc('joker_einloesen'),
     punkteVerlauf: id => x(sb.from('punkte').select('wert,grund,am,aufgaben(titel)').eq('mitglied_id', id).order('am', { ascending: false }).limit(30)),
 
@@ -104,6 +116,9 @@ export function supabaseBackend(sb, url) {
     einkaufNeu: k => x(sb.from('einkauf').insert({ titel: k.titel, menge: k.menge || '', status: k.status, von: k.von })),
     einkaufSetzen: (id, werte) => x(sb.from('einkauf').update(werte).eq('id', id)),
     einkaufLoeschen: id => x(sb.from('einkauf').delete().eq('id', id)),
+    einkaufHaeufig: async () => (await rpc('einkauf_haeufig')).map(v => v.titel),
+    einkaufAufraeumen: async () => (await x(sb.from('einkauf').update({ status: 'archiv' }).eq('status', 'gekauft').select('id'))).map(k => k.id),
+    einkaufZurueckholen: ids => x(sb.from('einkauf').update({ status: 'gekauft' }).in('id', ids)),
 
     // ---------- Kalender und Dran-Denken
     terminSpeichern: t => {

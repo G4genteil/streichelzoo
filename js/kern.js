@@ -43,7 +43,10 @@ export function render() {
     try {
       const nr = ++lauf, zug = richtung(), wurzel = document.documentElement;
       if (zug) wurzel.dataset.zug = zug; else delete wurzel.dataset.zug;
-      const t = document.startViewTransition(zeichne);
+      let gezeichnet = false;
+      const t = document.startViewTransition(() => { gezeichnet = true; zeichne(); });
+      // Malt der Browser gerade keine Bilder (App im Hintergrund), käme der Übergang nie dran: dann ohne ihn.
+      setTimeout(() => { if (!gezeichnet) { try { t.skipTransition(); } catch { /* schon vorbei */ } } }, 350);
       t.ready.catch(() => {});
       t.finished.catch(() => {}).then(() => { if (nr === lauf) delete wurzel.dataset.zug; });
       return t.updateCallbackDone.catch(() => {});
@@ -83,13 +86,66 @@ export function geh(o) {
   return render();
 }
 
+// Kurzmeldung am unteren Rand. Mit { zurueck } bekommt sie für ein paar Sekunden den Knopf „Rückgängig".
 let uhr;
-export function melde(text) {
+export function melde(text, { zurueck } = {}) {
   const el = document.getElementById('toast');
-  el.textContent = text;
+  const satz = document.createElement('span');
+  satz.textContent = text;
+  el.replaceChildren(satz);
+  if (zurueck) {
+    const knopf = document.createElement('button');
+    knopf.type = 'button';
+    knopf.textContent = 'Rückgängig';
+    knopf.onclick = () => { clearTimeout(uhr); el.classList.remove('an'); zurueck(); };
+    el.appendChild(knopf);
+  }
+  el.classList.toggle('mit', !!zurueck);
   el.classList.add('an');
   clearTimeout(uhr);
-  uhr = setTimeout(() => el.classList.remove('an'), 2600);
+  uhr = setTimeout(() => el.classList.remove('an'), zurueck ? 5500 : 2600);
+}
+
+// Konfetti aus zwei Kanonen links und rechts. Malt auf eine eigene Fläche über der App und räumt sich selbst weg.
+export function konfetti(farben) {
+  const rahmen = document.querySelector('.phone');
+  if (!rahmen || ruhig()) return;
+  const flaeche = document.createElement('canvas');
+  flaeche.className = 'konfetti';
+  rahmen.appendChild(flaeche);
+  const b = rahmen.clientWidth, h = rahmen.clientHeight, dichte = Math.min(window.devicePixelRatio || 1, 2);
+  flaeche.width = b * dichte; flaeche.height = h * dichte;
+  const stift = flaeche.getContext('2d');
+  stift.scale(dichte, dichte);
+  const zufall = (von, bis) => von + Math.random() * (bis - von);
+  const teile = Array.from({ length: 130 }, (_, i) => {
+    const links = i % 2 === 0, winkel = (links ? -1.05 : -2.09) + zufall(-.42, .42), tempo = zufall(9, 21);
+    return { x: links ? -8 : b + 8, y: h * zufall(.5, .66), vx: Math.cos(winkel) * tempo, vy: Math.sin(winkel) * tempo,
+      gr: zufall(6, 11), farbe: farben[i % farben.length], dreh: zufall(0, 6.3), vdreh: zufall(-.25, .25),
+      kipp: zufall(0, 6.3), vkipp: zufall(.12, .3), rund: i % 4 === 0, start: zufall(0, 140) };
+  });
+  const beginn = performance.now();
+  let zuletzt = beginn;
+  const bild = jetzt => {
+    const alter = jetzt - beginn, dt = Math.min(2.2, (jetzt - zuletzt) / 16.7);
+    zuletzt = jetzt;
+    stift.clearRect(0, 0, b, h);
+    stift.globalAlpha = Math.max(0, Math.min(1, (3400 - alter) / 700));
+    for (const t of teile) {
+      if (alter < t.start) continue;
+      t.vy += .34 * dt; t.vx *= Math.pow(.985, dt); t.vy *= Math.pow(.99, dt);
+      t.x += t.vx * dt + Math.sin(t.kipp) * .6; t.y += t.vy * dt;
+      t.dreh += t.vdreh * dt; t.kipp += t.vkipp * dt;
+      stift.save();
+      stift.translate(t.x, t.y); stift.rotate(t.dreh); stift.scale(1, Math.cos(t.kipp));
+      stift.fillStyle = t.farbe;
+      if (t.rund) { stift.beginPath(); stift.arc(0, 0, t.gr / 2, 0, 6.3); stift.fill(); }
+      else stift.fillRect(-t.gr / 2, -t.gr / 3, t.gr, t.gr / 1.5);
+      stift.restore();
+    }
+    if (alter < 3400) requestAnimationFrame(bild); else flaeche.remove();
+  };
+  requestAnimationFrame(bild);
 }
 
 // Blatt am Griff nach unten ziehen, wie bei iOS.
