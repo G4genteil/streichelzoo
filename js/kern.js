@@ -73,7 +73,54 @@ function tick() {
     fuehler.click();
   } catch { /* kein Tippgefühl, dann eben nicht */ }
 }
+// ---------- Töne
+// Kurze Klänge beim Abhaken, Bestätigen, Einzahlen, beim Joker und beim Wochenabschluss (Dateien in klang/).
+// Sie laufen über Web Audio: Das hält sich an den Stumm-Schalter des iPhones und spielt ohne Verzögerung.
+// Ein Browser gibt erst nach dem ersten Antippen Ton frei, deshalb wird dort alles vorbereitet.
+const KLAENGE = { haken: 0.5, fertig: 0.55, muenze: 0.5, joker: 0.6, sieg: 0.6 };   // Name -> Lautstärke
+let ton = null, tonAus = false;
+const puffer = {};
+try { tonAus = localStorage.getItem('zoo_toene') === 'aus'; } catch { /* dann eben mit Ton */ }
+
+function tonBereit() {
+  if (tonAus) return;
+  try {
+    if (!ton) {
+      const Art = window.AudioContext || window.webkitAudioContext;
+      if (!Art) return;
+      ton = new Art();
+      for (const name of Object.keys(KLAENGE)) {
+        fetch(`klang/${name}.mp3`).then(r => r.ok ? r.arrayBuffer() : Promise.reject())
+          .then(b => new Promise((gut, schlecht) => ton.decodeAudioData(b, gut, schlecht)))
+          .then(p => { puffer[name] = p; }).catch(() => {});
+      }
+    }
+    if (ton.state !== 'running') ton.resume().catch(() => {});
+  } catch { /* kein Ton, dann eben nicht */ }
+}
+
+export function klang(name) {
+  if (tonAus) return;
+  tonBereit();
+  try {
+    const p = puffer[name];
+    if (!ton || !p || ton.state !== 'running') return;
+    const quelle = ton.createBufferSource(), regler = ton.createGain();
+    quelle.buffer = p;
+    regler.gain.value = KLAENGE[name] || 0.5;
+    quelle.connect(regler); regler.connect(ton.destination);
+    quelle.start();
+  } catch { /* kein Ton, dann eben nicht */ }
+}
+export const toeneAn = () => !tonAus;
+export function toeneSetzen(an) {
+  tonAus = !an;
+  try { localStorage.setItem('zoo_toene', an ? 'an' : 'aus'); } catch { /* gilt dann nur bis zum Schließen */ }
+  if (an) { tonBereit(); setTimeout(() => klang('haken'), 250); }      // kurz vorspielen, sobald die Datei da ist
+}
+
 export function fuehlen() {
+  document.addEventListener('pointerdown', tonBereit, { passive: true });
   document.addEventListener('click', e => {
     const z = e.target.closest && e.target.closest('.tabs button, .schalter button, .haken, .zeile, .woche button, .tasten button');
     if (z && (!z.matches('.zeile') || z.querySelector('.kipp'))) tick();

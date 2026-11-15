@@ -51,6 +51,10 @@ export function relKurz(zeitpunkt) {
 // ---------- Feste Listen ----------
 export const PUNKTE = { tag: 1, woche: 3, frei: 1, irgendwann: 0 };
 export const ABZUG = { tag: 3, woche: 15 };
+// So viele Punkte bringt eine Aufgabe. Selbstverständliches kann ohne Punkte eingetragen sein.
+export const wert = a => a.ohne_punkte ? 0 : (PUNKTE[a.art] || 0);
+// "Leon", "Leon und Linus", "Leon, Linus und Stefan"
+export const aufzaehlen = l => l.length < 2 ? (l[0] || '') : l.slice(0, -1).join(', ') + ' und ' + l[l.length - 1];
 
 export const TIERE = ['🐑', '🐐', '🦙', '🐇', '🐖', '🐴', '🦆', '🐓', '🐄', '🦔', '🐈', '🐕', '🦁', '🦉', '🐢', '🦊', '🐿️'];
 

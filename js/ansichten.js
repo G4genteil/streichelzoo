@@ -1,10 +1,11 @@
 // Alle Ansichten. Jede Funktion liest den Zustand und liefert HTML als Text.
 // Knöpfe rufen Aktionen über das globale Objekt A auf (siehe aktionen.js).
 // In onclick stehen nur Kennungen und feste Werte, nie von Menschen eingegebener Text.
-import { S, P, ich, eltern } from './zustand.js';
+import { S, P, ich, eltern, runde, buendeln, darfPruefen, andereEltern } from './zustand.js';
+import { toeneAn } from './kern.js';
 import {
   esc, euro, heute, plus, montag, tagVon, iso, wocheEnde, fmtLang, fmtKurz, fmtDatum, fmtMonat, fmtZeit,
-  wochentagKurz, relTag, relKurz, fmtTag, PUNKTE, ABZUG, TIERE, FARBEN, WOCHENTAGE, HAKEN, MIKRO, KAMERA, FLAMME, LOB, ALLE, ICON, TABS,
+  wochentagKurz, relTag, relKurz, fmtTag, PUNKTE, ABZUG, wert, aufzaehlen, TIERE, FARBEN, WOCHENTAGE, HAKEN, MIKRO, KAMERA, FLAMME, LOB, ALLE, ICON, TABS,
 } from './hilfen.js';
 
 // ------------------------------------------------------------ Bausteine
@@ -45,6 +46,8 @@ function serieText(x) {
   return WOCHENTAGE.filter(([n]) => (x.tage || []).includes(n)).map(([, l]) => l).join(', ');
 }
 
+const serieWer = x => !x.fuer ? 'Für alle' : aufzaehlen([x.fuer, ...(x.mit || [])].map(id => P(id).name));
+
 // ------------------------------------------------------------ Termine eines Tages (mit Wiederholungen)
 
 const minuten = e => { const d = new Date(e.beginn); return e.ganztags ? -1 : d.getHours() * 60 + d.getMinutes(); };
@@ -67,13 +70,14 @@ export function termineAm(tag) {
 export function aufgabeInfo(a) {
   const h = heute();
   switch (a.status) {
-    case 'erledigt': return PUNKTE[a.art] && a.art !== 'frei' ? `Erledigt, +${PUNKTE[a.art]}` : 'Erledigt';
+    case 'erledigt': return wert(a) && a.art !== 'frei' ? `Erledigt, +${wert(a)}` : 'Erledigt';
     case 'wartet': return 'Wartet auf Bestätigung';
     case 'verpasst': return `Verpasst, −${ABZUG[a.art] || 0}`;
     case 'entfallen': return a.fuer ? 'Entfällt, Joker eingelöst' : 'Hat niemand gemacht';
     case 'abgelehnt': return 'Nicht anerkannt';
   }
-  if (!a.fuer) return (a.art === 'woche' ? 'Bis Sonntag. ' : a.faellig === plus(h, 1) ? 'Morgen. ' : '') + 'Wer zuerst kommt, bekommt ' + (PUNKTE[a.art] === 1 ? 'den Punkt' : `${PUNKTE[a.art]} Punkte`);
+  if (!a.fuer) return (a.art === 'woche' ? 'Bis Sonntag. ' : a.faellig === plus(h, 1) ? 'Morgen. ' : '')
+    + (!wert(a) ? 'Wer zuerst kommt, erledigt sie' : 'Wer zuerst kommt, bekommt ' + (wert(a) === 1 ? 'den Punkt' : `${wert(a)} Punkte`));
   if (a.hinweis) return 'Noch einmal: ' + esc(a.hinweis);
   if (a.art === 'woche') return 'Bis Sonntag, 18 Uhr';
   if (a.art === 'irgendwann') return 'Ohne Datum';
@@ -84,21 +88,28 @@ export function aufgabeInfo(a) {
 
 function aufgabeZeile(a, mitTier) {
   const m = a.fuer ? P(a.fuer) : ALLE, meine = a.fuer === S.ich;
+  // Gemeinsame Aufgabe: in der eigenen Liste steht, mit wem. In fremden Listen stehen alle Namen in einer Zeile.
+  const teile = runde(a), zus = teile.length > 1, mitWem = teile.filter(x => x.fuer !== a.fuer).map(x => P(x.fuer).name);
+  const zusText = !zus ? '' : teile.length > 2 && teile.length >= S.d.mitglieder.length ? 'alle zusammen'
+    : mitTier ? 'zusammen' : 'mit ' + (mitWem.length > 2 ? `${mitWem.length} anderen` : aufzaehlen(mitWem));
+  const wer = zus && mitTier ? aufzaehlen(teile.map(x => P(x.fuer).name)) : m.name;
   const stand = a.status === 'erledigt' ? 'erledigt' : a.status === 'wartet' ? 'wartet' : '';
   const info = aufgabeInfo(a);
   const marken = (a.art === 'frei' ? '<span class="marke">freiwillig</span>' : '')
     + (a.foto_pflicht && a.status === 'offen' ? '<span class="marke">mit Foto</span>' : '')
     + (a.foto_pfad && a.status === 'wartet' ? '<span class="marke">Foto</span>' : '')
-    + (a.fuer_alle && a.fuer ? '<span class="marke">für alle</span>' : '');
-  let rechts = mitTier ? tier(m, 'klein') : '';
-  if (a.status === 'wartet' && eltern() && !meine) {
+    + (a.fuer_alle && a.fuer ? '<span class="marke">für alle</span>' : '')
+    + (zus ? `<span class="marke">${esc(zusText)}</span>` : '')
+    + (a.ohne_punkte && !FERTIG.includes(a.status) ? '<span class="marke">ohne Punkte</span>' : '');
+  let rechts = !mitTier ? '' : zus ? teile.slice(0, 3).map(x => tier(P(x.fuer), 'klein')).join('') : tier(m, 'klein');
+  if (darfPruefen(a)) {
     rechts = `<button class="pille ja" onclick="A.bestaetige('${a.id}')">Bestätigen</button>`;
-  } else if (a.status === 'offen' && meine && a.art === 'tag' && !a.verschoben && a.faellig === heute()) {
+  } else if (a.status === 'offen' && meine && !zus && a.art === 'tag' && !a.verschoben && a.faellig === heute()) {
     rechts = `<button class="pille" onclick="A.morgen('${a.id}')">Auf morgen</button>`;
   }
   return `<div class="zeile ${FERTIG.includes(a.status) ? 'fertig' : ''}" style="view-transition-name:a-${a.id}">
     <button class="haken ${stand} ${frisch(a.id) ? 'frisch' : ''}" style="--c:${esc(m.farbe)}" onclick="A.abhaken('${a.id}')" aria-label="${esc(a.titel)} abhaken">${HAKEN}</button>
-    <button class="mitte" onclick="A.auf('${a.id}')"><span class="titel">${esc(a.titel)}${marken}</span><span class="info">${mitTier ? esc(m.name) + ', ' + klein(info) : info}</span></button>
+    <button class="mitte" onclick="A.auf('${a.id}')"><span class="titel">${esc(a.titel)}${marken}</span><span class="info">${mitTier ? esc(wer) + ', ' + klein(info) : info}</span></button>
     ${rechts}</div>`;
 }
 
@@ -191,7 +202,7 @@ function vHeute() {
   const dran = sortiert(meine.filter(a => (a.art === 'tag' || a.art === 'frei') && (a.faellig === h || a.status === 'wartet')));
   const morgen = meine.filter(a => a.art === 'tag' && a.faellig === mrg && a.status === 'offen');
   const woche = sortiert(meine.filter(a => a.art === 'woche' && (a.faellig === wocheEnde() || a.status === 'wartet')));
-  const warten = eltern() ? d.aufgaben.filter(a => a.status === 'wartet' && a.fuer !== me) : [];
+  const warten = buendeln(d.aufgaben.filter(darfPruefen));
   const vorschlaege = eltern() ? d.einkauf.filter(k => k.status === 'vorschlag').length : 0;
   const termine = termineAm(h).filter(e => e.fuer.includes(me));
   const sichtbar = eltern() ? ['bestaetigt', 'verpasst', 'joker', 'woche'] : ['bestaetigt', 'verpasst', 'joker', 'woche', 'einkauf'];
@@ -235,7 +246,8 @@ function vAufgaben() {
     irgendwann: a => a.art === 'irgendwann',
   }[S.seg];
   const alle = sortiert(S.d.aufgaben.filter(passt));
-  const meine = alle.filter(a => a.fuer === me), andere = alle.filter(a => a.fuer && a.fuer !== me);
+  const meine = alle.filter(a => a.fuer === me), dabei = new Set(meine.map(a => a.gruppe).filter(Boolean));
+  const andere = buendeln(alle.filter(a => a.fuer && a.fuer !== me && !dabei.has(a.gruppe)));   // Gemeinsames mit mir steht schon bei „Deine"
   const fuerAlle = alle.filter(a => !a.fuer && a.status === 'offen');
   const darfPlus = eltern() || S.seg === 'irgendwann';
 
@@ -247,7 +259,7 @@ function vAufgaben() {
   const serien = eltern() ? S.d.serien.filter(x => x.art === S.seg) : [];
   if (serien.length) {
     s += `<h2>Wiederkehrend</h2>` + liste(serien.map(x => `<button class="zeile" style="view-transition-name:s-${x.id}" onclick="A.serieAuf('${x.id}')">${tier(x.fuer ? P(x.fuer) : ALLE, 'klein')}
-      <span class="mitte"><span class="titel">${esc(x.titel)}</span><span class="info">${x.fuer ? esc(P(x.fuer).name) : 'Für alle'}, ${serieText(x)}</span></span>${pfeil}</button>`));
+      <span class="mitte"><span class="titel">${esc(x.titel)}</span><span class="info">${esc(serieWer(x))}, ${serieText(x)}${x.ohne_punkte ? ', ohne Punkte' : ''}</span></span>${pfeil}</button>`));
   }
   if (S.seg === 'tag') s += `<div class="abstand"><button class="knopf still" onclick="A.freiAuf()">Freiwillig etwas erledigt?</button></div>`;
   return s;
@@ -380,9 +392,12 @@ function bAufgabe(s) {
   const a = S.d.aufgaben.find(x => x.id === s.id);
   if (!a) return `<h3>Diese Aufgabe gibt es nicht mehr</h3>`;
   const frei = !a.fuer, m = frei ? ALLE : P(a.fuer), meine = a.fuer === S.ich, serie = a.serie_id && S.d.serien.find(x => x.id === a.serie_id);
-  const pruefen = a.status === 'wartet' && eltern() && !meine;
-  let h = `<div class="blatt-kopf">${tier(m)}<div><h3>${esc(a.titel)}</h3><p class="unter">${ART[a.art]} für ${frei ? 'alle' : esc(m.name)}${a.fuer_alle && !frei ? ' (war für alle)' : ''}</p></div></div>
+  const teile = runde(a), zus = teile.length > 1, pruefen = darfPruefen(a), w = wert(a);
+  const haengt = a.status === 'wartet' && eltern() && !pruefen;           // ich bin selbst beteiligt
+  let h = `<div class="blatt-kopf">${tier(m)}<div><h3>${esc(a.titel)}</h3><p class="unter">${ART[a.art]} für ${frei ? 'alle' : zus ? esc(aufzaehlen(teile.map(x => P(x.fuer).name))) : esc(m.name)}${a.fuer_alle && !frei ? ' (war für alle)' : ''}</p></div></div>
     <div class="liste eng"><div class="zeile"><span class="mitte titel">Stand</span><span class="info">${aufgabeInfo(a)}</span></div>
+    ${zus ? `<div class="zeile"><span class="mitte"><span class="titel">Gemeinsame Aufgabe</span><span class="info">${a.erledigt_von && a.status !== 'offen' ? `Abgehakt von ${esc(P(a.erledigt_von).name)}` : 'Einer hakt ab, dann ist sie für alle abgehakt.'}</span></span></div>` : ''}
+    ${a.ohne_punkte ? `<div class="zeile"><span class="mitte"><span class="titel">Ohne Punkte</span><span class="info">Das ist selbstverständlich.${a.fuer && ABZUG[a.art] ? ` Liegen lassen kostet trotzdem ${ABZUG[a.art]} Punkte.` : ''}</span></span></div>` : ''}
     ${a.von && a.von !== a.fuer ? `<div class="zeile"><span class="mitte titel">Eingetragen von</span><span class="info">${esc(P(a.von).name)}</span></div>` : ''}
     ${a.foto_pflicht ? `<div class="zeile"><span class="mitte titel">Foto als Beweis</span><span class="info">${a.foto_pfad ? 'Ist dabei' : 'Wird verlangt'}</span></div>` : ''}
     ${serie ? `<div class="zeile"><span class="mitte titel">Wiederholt sich</span><span class="info">${gross(serieText(serie))}</span></div>` : ''}
@@ -400,30 +415,37 @@ function bAufgabe(s) {
       k.push(`<button class="knopf" onclick="A.abhaken('${a.id}')">Erledigt</button>`);
       if (a.art !== 'irgendwann' && !a.foto_pfad) k.push(`<button class="knopf still" onclick="A.mitFoto('${a.id}')">Mit Foto abhaken</button>`);
     }
-    if (meine && a.art === 'tag' && !a.verschoben && a.faellig === heute()) k.push(`<button class="knopf still" onclick="A.morgen('${a.id}')">Auf morgen verschieben</button>`);
+    if (meine && !zus && a.art === 'tag' && !a.verschoben && a.faellig === heute()) k.push(`<button class="knopf still" onclick="A.morgen('${a.id}')">Auf morgen verschieben</button>`);
   }
   if (pruefen) {
     if (a.art === 'frei') k.push(`<div class="zwei"><button class="knopf" onclick="A.bestaetige('${a.id}',1)">1 Punkt geben</button><button class="knopf still" onclick="A.bestaetige('${a.id}',2)">2 Punkte geben</button></div>`);
-    else k.push(`<button class="knopf" onclick="A.bestaetige('${a.id}')">Bestätigen, +${PUNKTE[a.art]}</button>`);
+    else k.push(`<button class="knopf" onclick="A.bestaetige('${a.id}')">${!w ? 'Bestätigen' : zus ? `Bestätigen, +${w} für jeden` : `Bestätigen, +${w}`}</button>`);
     k.push(`<button class="knopf still" onclick="A.zurueckAuf('${a.id}')">${a.art === 'frei' ? 'Nicht anerkennen' : 'Noch nicht in Ordnung'}</button>`);
   }
   if (eltern() || (a.von === S.ich && a.art === 'irgendwann')) {
-    k.push(`<button class="knopf gefahr" onclick="A.loeschAufgabe('${a.id}')">Aufgabe löschen</button>`);
+    k.push(`<button class="knopf gefahr" onclick="A.loeschAufgabe('${a.id}')">${zus ? 'Für alle löschen' : 'Aufgabe löschen'}</button>`);
   }
+  if (haengt) h += `<p class="hinweis">Das bestätigt ${esc(aufzaehlen(andereEltern().map(x => x.name)) || 'das andere Elternteil')}.</p>`;
   return h + `<div class="knoepfe">${k.join('')}</div>`;
 }
 
 function bNeu(s) {
   const wer = S.d.mitglieder.filter(m => eltern() || s.art === 'irgendwann' || m.rolle === 'kind');
   const titel = { tag: 'Tagesaufgabe', woche: 'Aufgabe für die Woche', irgendwann: 'Aufgabe ohne Datum' }[s.art];
+  const an = id => s.zus ? s.wer.includes(id) : s.fuer === id, alleAn = s.zus ? wer.every(m => s.wer.includes(m.id)) : s.fuer === 'alle';
+  const lohn = !PUNKTE[s.art] || s.ohne ? '' : PUNKTE[s.art] === 1 ? 'den Punkt' : `die ${PUNKTE[s.art]} Punkte`;
+  const hinweis = s.zus ? `Tippe alle an, die mitmachen. Einer hakt ab, ${lohn ? `jeder bekommt ${lohn}` : 'dann ist sie für alle abgehakt'}.`
+    : s.fuer === 'alle' ? `${lohn ? `Wer sie zuerst erledigt, bekommt ${lohn}` : 'Wer zuerst kommt, erledigt sie'}. Bleibt sie liegen, verliert niemand etwas.` : '';
   return `<h3>${titel}</h3>
-    <p class="klein-titel">Für wen?</p>
-    <div class="chips">${wer.map(m => `<button class="chip ${s.fuer === m.id ? 'an' : ''}" style="--c:${esc(m.farbe)}" onclick="A.neuFuer('${m.id}')">${tier(m, 'klein')}${esc(m.name)}</button>`).join('')}
-      ${eltern() && s.art !== 'irgendwann' ? `<button class="chip ${s.fuer === 'alle' ? 'an' : ''}" style="--c:${ALLE.farbe}" onclick="A.neuFuer('alle')">${tier(ALLE, 'klein')}Alle</button>` : ''}</div>
-    ${s.fuer === 'alle' ? `<p class="hinweis">Wer sie zuerst erledigt, bekommt ${PUNKTE[s.art] === 1 ? 'den Punkt' : `die ${PUNKTE[s.art]} Punkte`}. Bleibt sie liegen, verliert niemand etwas.</p>` : ''}
+    <p class="klein-titel">${s.zus ? 'Wer macht mit?' : 'Für wen?'}</p>
+    <div class="chips">${wer.map(m => `<button class="chip ${an(m.id) ? 'an' : ''}" style="--c:${esc(m.farbe)}" onclick="A.neuFuer('${m.id}')" aria-pressed="${an(m.id)}">${tier(m, 'klein')}${esc(m.name)}</button>`).join('')}
+      ${s.zus || (eltern() && s.art !== 'irgendwann') ? `<button class="chip ${alleAn ? 'an' : ''}" style="--c:${ALLE.farbe}" onclick="A.neuFuer('alle')" aria-pressed="${alleAn}">${tier(ALLE, 'klein')}Alle</button>` : ''}</div>
+    ${wer.length > 1 ? `<div class="liste eng"><button class="zeile" onclick="A.zusUm()"><span class="mitte"><span class="titel">Zusammen erledigen</span>
+      <span class="info">Mehrere machen die Aufgabe gemeinsam</span></span>${kipp(s.zus)}</button></div>` : ''}
+    ${hinweis ? `<p class="hinweis">${hinweis}</p>` : ''}
     <p class="klein-titel">Was ist zu tun?</p>
     ${sprechFeld(`<input class="feld voll hell" id="neu-t" value="${esc(s.t)}" oninput="A.entwurf('t', this.value)" onkeydown="if(event.key==='Enter')A.neuAufgabe()" placeholder="${S.hoert ? 'Ich höre zu …' : 'z. B. Flur wischen'}" maxlength="120" enterkeyhint="done" autocomplete="off">`, 'neu-t')}
-    ${s.art === 'tag' && s.vor.length && s.fuer !== 'alle' ? `<p class="klein-titel">Oft für ${esc(P(s.fuer).name)}</p>
+    ${s.art === 'tag' && s.vor.length && s.fuer !== 'alle' && !s.zus ? `<p class="klein-titel">Oft für ${esc(P(s.fuer).name)}</p>
     <div class="chips">${s.vor.map(o => `<button class="chip nur" data-t="${esc(o)}" onclick="A.vorschlagNehmen(this.dataset.t)">${esc(o)}</button>`).join('')}</div>` : ''}
     ${s.art === 'tag' && !s.wdh ? `<p class="klein-titel">Wann?</p>${blattSchalter('wann', [['heute', 'Heute'], ['morgen', 'Morgen']])}` : ''}
     ${s.art === 'tag' && s.wdh ? `<p class="klein-titel">An welchen Tagen?</p>
@@ -433,7 +455,9 @@ function bNeu(s) {
       `<button class="chip nur ${s.tage === n ? 'an' : ''}" onclick="A.blattSetz('tage',${n})">${l}</button>`).join('')}</div>`
       : `<div class="liste eng"><button class="zeile" onclick="A.blattUm('wdh')"><span class="mitte"><span class="titel">Wiederholen</span>
         <span class="info">${s.art === 'tag' ? 'Trägt sich an den gewählten Tagen von selbst ein' : 'Trägt sich jede Woche von selbst ein'}</span></span>${kipp(s.wdh)}</button>
-      <button class="zeile" onclick="A.blattUm('foto')"><span class="mitte titel">Foto als Beweis verlangen</span>${kipp(s.foto)}</button></div>`}
+      <button class="zeile" onclick="A.blattUm('foto')"><span class="mitte titel">Foto als Beweis verlangen</span>${kipp(s.foto)}</button>
+      <button class="zeile" onclick="A.blattUm('ohne')"><span class="mitte"><span class="titel">Ohne Punkte</span>
+        <span class="info">Für Selbstverständliches.${s.fuer === 'alle' && !s.zus ? '' : ` Liegen lassen kostet trotzdem ${ABZUG[s.art]} Punkte.`}</span></span>${kipp(s.ohne)}</button></div>`}
     <div class="abstand"><button class="knopf" onclick="A.neuAufgabe()">Aufgabe eintragen</button></div>`;
 }
 
@@ -441,8 +465,10 @@ function bSerie(s) {
   const x = S.d.serien.find(v => v.id === s.id);
   if (!x) return `<h3>Diese Wiederholung gibt es nicht mehr</h3>`;
   const m = x.fuer ? P(x.fuer) : ALLE;
-  return `<div class="blatt-kopf">${tier(m)}<div><h3>${esc(x.titel)}</h3><p class="unter">${ART[x.art]} für ${x.fuer ? esc(m.name) : 'alle'}</p></div></div>
+  return `<div class="blatt-kopf">${tier(m)}<div><h3>${esc(x.titel)}</h3><p class="unter">${ART[x.art]} für ${x.fuer ? esc(serieWer(x)) : 'alle'}</p></div></div>
     <div class="liste eng"><div class="zeile"><span class="mitte titel">Wiederholt sich</span><span class="info">${gross(serieText(x))}</span></div>
+    ${(x.mit || []).length ? `<div class="zeile"><span class="mitte titel">Gemeinsame Aufgabe</span><span class="info">Einer hakt für alle ab</span></div>` : ''}
+    ${x.ohne_punkte ? `<div class="zeile"><span class="mitte titel">Punkte</span><span class="info">Ohne Punkte</span></div>` : ''}
     ${x.foto_pflicht ? `<div class="zeile"><span class="mitte titel">Foto als Beweis</span><span class="info">Wird verlangt</span></div>` : ''}
     ${x.von ? `<div class="zeile"><span class="mitte titel">Eingetragen von</span><span class="info">${esc(P(x.von).name)}</span></div>` : ''}</div>
     <p class="hinweis">Was schon eingetragen ist, bleibt stehen. Es kommt nur nichts Neues mehr dazu.</p>
@@ -509,7 +535,9 @@ function bEinst() {
     <p class="klein-titel">Abend-Erinnerung an offene Aufgaben um</p>
     <div class="chips">${[16, 17, 18, 19, 20].map(n => `<button class="chip nur ${abend === n ? 'an' : ''}" onclick="A.abendZeit(${n})">${n} Uhr</button>`).join('')}</div>
     <p class="klein-titel">Dieses Gerät</p>
-    <div class="liste"><button class="zeile" onclick="A.merkenUm()"><span class="mitte titel">Code merken</span>${kipp(S.merken)}</button>
+    <div class="liste"><button class="zeile" onclick="A.toeneUm()"><span class="mitte"><span class="titel">Töne</span>
+      <span class="info">Beim Abhaken, Bestätigen und Einzahlen. Der Stumm-Schalter am iPhone gilt trotzdem.</span></span>${kipp(toeneAn())}</button>
+      <button class="zeile" onclick="A.merkenUm()"><span class="mitte titel">Code merken</span>${kipp(S.merken)}</button>
       <button class="zeile" onclick="A.codeAuf()"><span class="mitte titel">${eltern() ? 'Einen Code ändern' : 'Meinen Code ändern'}</span><span class="info">›</span></button></div>
     <div class="knoepfe"><button class="knopf still" onclick="A.abmelden()">Abmelden</button></div>`;
 }
@@ -586,7 +614,7 @@ function bZurueck(s) {
   if (!a || a.status !== 'wartet') return `<h3>Schon erledigt</h3>`;
   const frei = a.art === 'frei';
   const gruende = frei ? ['Das zählt nicht', 'War schon gemacht', 'Zu wenig'] : ['Nicht gründlich genug', 'Noch nicht fertig', 'Foto fehlt'];
-  return `<h3>${frei ? 'Warum nicht?' : 'Was fehlt noch?'}</h3><p class="unter">${esc(a.titel)}, ${esc(P(a.fuer).name)}</p>
+  return `<h3>${frei ? 'Warum nicht?' : 'Was fehlt noch?'}</h3><p class="unter">${esc(a.titel)}, ${esc(aufzaehlen(runde(a).map(x => P(x.fuer).name)))}</p>
     <div class="chips abstand">${gruende.map(g => `<button class="chip nur" onclick="A.zurueckgeben('${a.id}','${g}')">${g}</button>`).join('')}</div>
     <input class="feld voll hell abstand" value="${esc(s.grund)}" oninput="A.entwurf('grund', this.value)" onkeydown="if(event.key==='Enter')A.zurueckgeben('${a.id}')" placeholder="Oder kurz selbst schreiben" maxlength="120" autocomplete="off" enterkeyhint="done">
     <div class="abstand"><button class="knopf" onclick="A.zurueckgeben('${a.id}')">${frei ? 'Nicht anerkennen' : 'Zurückgeben'}</button></div>`;

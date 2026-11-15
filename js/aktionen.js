@@ -1,10 +1,10 @@
 // Alles, was beim Antippen passiert. Die Ansichten rufen diese Funktionen über A.name(...) auf.
 // Muster: erst die Anzeige sofort anpassen ("lokal"), dann den Server fragen, dann den echten Stand nachladen.
 // Lehnt der Server ab, zeigt das Nachladen wieder die Wahrheit.
-import { S, P, ich, eltern, leer } from './zustand.js';
-import { render, zeichne, geh, melde, konfetti } from './kern.js';
+import { S, P, ich, eltern, leer, runde, buendeln, darfPruefen, andereEltern } from './zustand.js';
+import { render, zeichne, geh, melde, konfetti, klang, toeneAn, toeneSetzen } from './kern.js';
 import { termineAm, feierPlan } from './ansichten.js';
-import { heute, plus, iso, euro, centAus, PUNKTE, TIERE, FARBEN } from './hilfen.js';
+import { heute, plus, iso, euro, centAus, PUNKTE, TIERE, FARBEN, wert, aufzaehlen } from './hilfen.js';
 
 export const A = {};
 let B = null;                      // die Verbindung (backend.js oder demo.js)
@@ -41,7 +41,7 @@ async function laden() {
     const wer = await B.wer().catch(() => S.ich);
     if (!wer) return raus('Bitte melde dich noch einmal an');   // z. B. hat ein Elternteil den Code neu gesetzt
   }
-  for (const [id, w] of wartend) d[w.liste] = d[w.liste].filter(x => x.id !== id);   // was gerade gelöscht wird, bleibt weg
+  for (const w of wartend.values()) d[w.liste] = d[w.liste].filter(x => !w.ids.includes(x.id));   // was gerade gelöscht wird, bleibt weg
   const roh = JSON.stringify(d), hatteFehler = !!S.ladeFehler;
   S.ladeFehler = '';
   if (roh !== S.roh || hatteFehler) {
@@ -72,10 +72,10 @@ async function tun(ruf, { lokal, ok, zu, zurueck } = {}) {
 
 // Löschen mit Bedenkzeit: Der Eintrag verschwindet sofort, gelöscht wird erst, wenn „Rückgängig" abgelaufen ist.
 // Wird die App vorher geschlossen, bleibt der Eintrag einfach da.
-const wartend = new Map();         // id -> { liste, fertig }
-function spaeterLoeschen(liste, id, ruf, text) {
-  const eintrag = S.d[liste].find(x => x.id === id);
-  if (!eintrag) return A.zu();
+const wartend = new Map();         // id -> { liste, fertig, ids }
+function spaeterLoeschen(liste, id, ruf, text, auch = []) {
+  const ids = [id, ...auch], eintraege = S.d[liste].filter(x => ids.includes(x.id));
+  if (!eintraege.some(x => x.id === id)) return A.zu();
   const fertig = async () => {
     if (!wartend.delete(id)) return;
     clearTimeout(uhr);
@@ -84,15 +84,15 @@ function spaeterLoeschen(liste, id, ruf, text) {
     laden();
   };
   const uhr = setTimeout(fertig, 5500);
-  wartend.set(id, { liste, fertig });
-  S.d[liste] = S.d[liste].filter(x => x.id !== id);
+  wartend.set(id, { liste, fertig, ids });
+  S.d[liste] = S.d[liste].filter(x => !ids.includes(x.id));
   S.roh = ''; S.sheet = null;
   symbol();
   render();
   melde(text, { zurueck: () => {
     if (!wartend.delete(id)) return;
     clearTimeout(uhr);
-    if (!S.d[liste].some(x => x.id === id)) S.d[liste] = [...S.d[liste], eintrag];
+    S.d[liste] = [...S.d[liste], ...eintraege.filter(e => !S.d[liste].some(x => x.id === e.id))];
     S.roh = '';
     symbol();
     render();
@@ -107,8 +107,8 @@ function symbol() {
   if (!('setAppBadge' in navigator)) return;
   const h = heute(), me = S.ich, bestaetigt = eltern();
   const n = S.phase !== 'app' ? 0 : S.d.aufgaben.filter(a =>
-    (a.fuer === me && a.status === 'offen' && ((a.art === 'tag' && a.faellig <= h) || a.art === 'woche'))
-    || (bestaetigt && a.status === 'wartet' && a.fuer !== me)).length;
+    a.fuer === me && a.status === 'offen' && ((a.art === 'tag' && a.faellig <= h) || a.art === 'woche')).length
+    + (bestaetigt ? buendeln(S.d.aufgaben.filter(darfPruefen)).length : 0);
   try { (n ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => {}); } catch { /* dann eben keine Zahl */ }
 }
 
@@ -212,6 +212,7 @@ A.taste = async z => {
   zeichne();
 };
 
+A.toeneUm = () => { toeneSetzen(!toeneAn()); render(); };
 A.merkenUm = () => {
   S.merken = !S.merken;
   lager.setz('zoo_merken', S.merken ? '1' : '0');
@@ -325,22 +326,36 @@ async function bildWaehlen(kamera, max, quadrat) {
 
 // ------------------------------------------------------------ Aufgaben
 
+// Abhaken. Aufgaben ohne Datum sind sofort erledigt, alles andere wartet auf ein Elternteil. Das gilt auch für Eltern:
+// Dann bestätigt das andere Elternteil. Eine gemeinsame Aufgabe ist mit einem Haken für alle abgehakt.
 function erledige(a, foto) {
-  const sofort = a.art === 'irgendwann' || eltern(), p = PUNKTE[a.art];
+  const sofort = a.art === 'irgendwann' || (eltern() && !andereEltern().length), p = wert(a);
   return tun(() => B.aufgabeErledigen(a.id, foto), {
     zu: true,
     lokal: () => {
       if (!a.fuer) a.fuer = S.ich;                       // eine Aufgabe für alle gehört jetzt mir
-      a.status = sofort ? 'erledigt' : 'wartet';
-      a.hinweis = null;
-      if (foto) a.foto_pfad = foto;
-      if (sofort && p) punkteLokal(a.fuer, p);
+      for (const x of runde(a).filter(x => x.id === a.id || x.status === 'offen')) {
+        x.status = sofort ? 'erledigt' : 'wartet';
+        x.hinweis = null; x.erledigt_von = S.ich;
+        if (foto) x.foto_pfad = foto;
+        if (sofort && wert(x)) punkteLokal(x.fuer, wert(x));
+      }
       eben(a.id);
+      klang(sofort ? 'fertig' : 'haken');
     },
-    ok: !sofort ? 'Wartet auf Bestätigung' : p ? `Erledigt, +${p} ${p > 1 ? 'Punkte' : 'Punkt'}` : 'Erledigt',
+    // Was wirklich passiert ist, sagt der Server (solange 08_gemeinsam.sql fehlt, sind Eltern noch sofort fertig).
+    ok: r => r === 'wartet' ? 'Wartet auf Bestätigung' : p ? `Erledigt, +${p} ${p > 1 ? 'Punkte' : 'Punkt'}` : 'Erledigt',
     zurueck: () => tun(() => B.aufgabeWiederoeffnen(a.id), {
       ok: 'Wieder offen',
-      lokal: () => { const x = aufgabe(a.id); if (x) { x.status = 'offen'; if (sofort && p) punkteLokal(x.fuer, -p); if (x.fuer_alle) x.fuer = null; } },
+      lokal: () => {
+        const x = aufgabe(a.id);
+        if (!x) return;
+        for (const y of runde(x).filter(y => y.id === x.id || y.erledigt_von === S.ich)) {
+          if (y.status === 'erledigt' && wert(y)) punkteLokal(y.fuer, -wert(y));
+          y.status = 'offen'; y.erledigt_von = null;
+          if (y.fuer_alle) y.fuer = null;
+        }
+      },
     }),
   });
 }
@@ -355,7 +370,7 @@ A.abhaken = id => {
   }
   if (a.status === 'wartet') {
     if (!eltern()) return melde('Ein Elternteil muss noch bestätigen');
-    if (a.fuer === S.ich) return melde('Das bestätigt das andere Elternteil');
+    if (!darfPruefen(a)) return melde(`Das bestätigt ${aufzaehlen(andereEltern().map(m => m.name)) || 'das andere Elternteil'}`);
     return A.bestaetige(id);
   }
 };
@@ -373,21 +388,26 @@ A.mitFoto = async id => {
 A.bestaetige = (id, punkte) => {
   const a = aufgabe(id);
   if (!a) return;
-  const p = a.art === 'frei' ? (punkte || 1) : PUNKTE[a.art];
+  const p = a.art === 'frei' ? (punkte || 1) : wert(a);
   const lob = S.sheet && S.sheet.k === 'aufgabe' && S.sheet.id === id ? S.sheet.lob || null : null;
+  const teile = runde(a).filter(x => x.status === 'wartet'), wer = aufzaehlen(teile.map(x => P(x.fuer).name));
   return tun(() => B.aufgabeBestaetigen(id, punkte, lob), {
-    zu: true, ok: `Bestätigt, +${p} für ${P(a.fuer).name}`,
-    lokal: () => { a.status = 'erledigt'; a.lob = lob; a.hinweis = null; a.bestaetigt_von = S.ich; punkteLokal(a.fuer, p); eben(id); },
+    zu: true, ok: p ? `Bestätigt, +${p} für ${wer}` : `Bestätigt für ${wer}`,
+    lokal: () => {
+      for (const x of teile) { x.status = 'erledigt'; x.lob = lob; x.hinweis = null; x.bestaetigt_von = S.ich; if (p) punkteLokal(x.fuer, p); }
+      eben(id);
+      klang('fertig');
+    },
   });
 };
 A.lobWahl = l => { const s = S.sheet; if (s) { s.lob = s.lob === l ? null : l; render(); } };
 
 A.alleBestaetigen = () => {
-  const offen = S.d.aufgaben.filter(a => a.status === 'wartet' && a.fuer !== S.ich);
+  const offen = S.d.aufgaben.filter(darfPruefen);
   if (!offen.length) return;
   return tun(() => B.alleBestaetigen(), {
     ok: n => n === 1 ? '1 Aufgabe bestätigt' : `${n} Aufgaben bestätigt`,
-    lokal: () => offen.forEach(a => { a.status = 'erledigt'; punkteLokal(a.fuer, PUNKTE[a.art]); }),
+    lokal: () => { offen.forEach(a => { a.status = 'erledigt'; if (wert(a)) punkteLokal(a.fuer, wert(a)); }); klang('fertig'); },
   });
 };
 
@@ -396,9 +416,10 @@ A.zurueckgeben = (id, fest) => {
   const a = aufgabe(id);
   if (!a) return A.zu();
   const grund = (fest || (S.sheet && S.sheet.grund) || '').trim() || null;
+  const teile = runde(a).filter(x => x.status === 'wartet');
   return tun(() => B.aufgabeZurueck(id, grund), {
-    zu: true, ok: a.art === 'frei' ? 'Nicht anerkannt' : `${P(a.fuer).name} muss noch einmal ran`,
-    lokal: () => { a.status = a.art === 'frei' ? 'abgelehnt' : 'offen'; a.hinweis = grund; },
+    zu: true, ok: a.art === 'frei' ? 'Nicht anerkannt' : `${aufzaehlen(teile.map(x => P(x.fuer).name))} ${teile.length > 1 ? 'müssen' : 'muss'} noch einmal ran`,
+    lokal: () => { for (const x of teile) { x.status = a.art === 'frei' ? 'abgelehnt' : 'offen'; x.hinweis = grund; x.erledigt_von = null; } },
   });
 };
 
@@ -411,7 +432,12 @@ A.morgen = id => {
   });
 };
 
-A.loeschAufgabe = id => spaeterLoeschen('aufgaben', id, () => B.aufgabeLoeschen(id), 'Aufgabe gelöscht');
+A.loeschAufgabe = id => {
+  const a = aufgabe(id);
+  if (!a) return A.zu();
+  const auch = runde(a).map(x => x.id).filter(x => x !== id);     // eine gemeinsame Aufgabe verschwindet bei allen
+  return spaeterLoeschen('aufgaben', id, () => B.aufgabeLoeschen(id, a.gruppe || null), auch.length ? 'Für alle gelöscht' : 'Aufgabe gelöscht', auch);
+};
 
 A.auf = id => {
   const a = aufgabe(id);
@@ -423,7 +449,7 @@ A.auf = id => {
 
 function ladeVorschlaege() {
   const s = S.sheet;
-  if (!s || s.k !== 'neu' || s.art !== 'tag' || !eltern() || s.fuer === 'alle') return;
+  if (!s || s.k !== 'neu' || s.art !== 'tag' || !eltern() || s.fuer === 'alle' || s.zus) return;
   const fuer = s.fuer;
   B.vorschlaege(fuer).then(v => { if (S.sheet === s && s.fuer === fuer) { s.vor = v; render(); } }).catch(() => {});
 }
@@ -431,11 +457,32 @@ function ladeVorschlaege() {
 A.neuAuf = () => {
   const art = S.seg, kinder = S.d.mitglieder.filter(m => m.rolle === 'kind');
   const fuer = art === 'irgendwann' ? S.ich : (kinder.find(m => m.id !== S.ich) || kinder[0] || ich()).id;
-  S.sheet = { k: 'neu', art, fuer, t: '', wann: 'heute', foto: false, tage: 7, vor: [], wdh: false, wtage: [1, 2, 3, 4, 5, 6, 7] };
+  S.sheet = { k: 'neu', art, fuer, t: '', wann: 'heute', foto: false, tage: 7, vor: [], wdh: false, wtage: [1, 2, 3, 4, 5, 6, 7],
+    zus: false, wer: [], ohne: false };              // zus: mehrere erledigen sie zusammen (wer = die Beteiligten)
   render();
   ladeVorschlaege();
 };
-A.neuFuer = id => { if (!S.sheet) return; S.sheet.fuer = id; S.sheet.vor = []; render(); ladeVorschlaege(); };
+A.neuFuer = id => {
+  const s = S.sheet;
+  if (!s) return;
+  if (s.zus) {                                           // zusammen: mehrere antippen, „Alle" wählt alle an oder ab
+    const alle = S.d.mitglieder.map(m => m.id);
+    if (id === 'alle') s.wer = alle.every(x => s.wer.includes(x)) ? [] : alle;
+    else s.wer = s.wer.includes(id) ? s.wer.filter(x => x !== id) : [...s.wer, id];
+    return render();
+  }
+  s.fuer = id; s.vor = [];
+  render();
+  ladeVorschlaege();
+};
+A.zusUm = () => {
+  const s = S.sheet;
+  if (!s) return;
+  s.zus = !s.zus;
+  if (s.zus) { s.wer = s.fuer === 'alle' ? S.d.mitglieder.map(m => m.id) : [s.fuer]; s.vor = []; }
+  else { s.fuer = s.wer[0] || S.ich; ladeVorschlaege(); }
+  render();
+};
 A.vorschlagNehmen = t => {
   if (!S.sheet) return;
   S.sheet.t = t;
@@ -453,15 +500,22 @@ A.neuTag = n => {
 A.neuAufgabe = () => {
   const s = S.sheet, titel = (s.t || '').trim();
   if (!titel) return melde('Schreib kurz, was zu tun ist');
-  const fuer = s.fuer === 'alle' ? null : s.fuer;        // leer = für alle
+  let fuer = s.fuer === 'alle' ? null : s.fuer, mit = [];   // leer = für alle
+  if (s.zus) {
+    const dabei = S.d.mitglieder.map(m => m.id).filter(id => s.wer.includes(id));
+    if (dabei.length < 2) return melde('Tippe mindestens zwei an, die mitmachen');
+    fuer = dabei[0]; mit = dabei.slice(1);
+  }
+  const ohne_punkte = s.art !== 'irgendwann' && !!s.ohne;
   if (s.art !== 'irgendwann' && s.wdh) {
     if (s.art === 'tag' && !s.wtage.length) return melde('Wähle mindestens einen Wochentag');
-    return tun(() => B.serieAnlegen({ titel, art: s.art, fuer, tage: s.art === 'tag' ? [...s.wtage].sort((a, b) => a - b) : null, foto_pflicht: s.foto }),
+    return tun(() => B.serieAnlegen({ titel, art: s.art, fuer, mit, ohne_punkte, tage: s.art === 'tag' ? [...s.wtage].sort((a, b) => a - b) : null, foto_pflicht: s.foto }),
       { zu: true, ok: 'Trägt sich ab jetzt von selbst ein' });
   }
   const faellig = s.art === 'tag' ? (s.wann === 'morgen' ? plus(heute(), 1) : heute()) : null;
-  return tun(() => B.aufgabeAnlegen({ titel, art: s.art, fuer, faellig, foto_pflicht: s.art !== 'irgendwann' && s.foto, erinnerung_tage: s.tage }),
-    { zu: true, ok: !fuer ? 'Für alle eingetragen' : fuer === S.ich ? 'Eingetragen' : `Aufgabe für ${P(fuer).name} eingetragen` });
+  return tun(() => B.aufgabeAnlegen({ titel, art: s.art, fuer, mit, ohne_punkte, faellig, foto_pflicht: s.art !== 'irgendwann' && s.foto, erinnerung_tage: s.tage }),
+    { zu: true, ok: mit.length ? `Für ${aufzaehlen([fuer, ...mit].map(id => id === S.ich ? 'dich' : P(id).name))} eingetragen`
+      : !fuer ? 'Für alle eingetragen' : fuer === S.ich ? 'Eingetragen' : `Aufgabe für ${P(fuer).name} eingetragen` });
 };
 
 A.serieAuf = id => geh({ sheet: { k: 'serie', id } });
@@ -536,6 +590,7 @@ A.jokerAuf = () => {
 A.jokerEin = () => tun(() => B.jokerEinloesen(), {
   zu: true, ok: 'Joker eingelöst. Heute hast du frei.',
   lokal: () => {
+    klang('joker');
     const b = S.d.best.find(x => x.mitglied_id === S.ich), h = heute();
     if (b && b.joker > 0) b.joker--;
     S.d.jokerHeute.push(S.ich);
@@ -630,7 +685,7 @@ A.kaufUm = id => {
   if (!k) return;
   if (!eltern()) return melde('Abhaken können nur Eltern');
   const neu = k.status === 'gekauft' ? 'liste' : 'gekauft';
-  return tun(() => B.einkaufSetzen(id, { status: neu }), { lokal: () => { k.status = neu; if (neu === 'gekauft') eben(id); } });
+  return tun(() => B.einkaufSetzen(id, { status: neu }), { lokal: () => { k.status = neu; if (neu === 'gekauft') { eben(id); klang('haken'); } } });
 };
 A.kaufAuf = id => { const k = kauf(id); if (k && eltern()) return geh({ sheet: { k: 'kauf', id, menge: k.menge || '' } }); };
 A.kaufMenge = () => {
@@ -690,7 +745,7 @@ A.merkUm = id => {
   const m = S.d.merk.find(x => x.id === id);
   if (!m) return;
   const neu = !m.erledigt;
-  return tun(() => B.merkSetzen(id, { erledigt: neu }), { lokal: () => { m.erledigt = neu; if (neu) eben(id); } });
+  return tun(() => B.merkSetzen(id, { erledigt: neu }), { lokal: () => { m.erledigt = neu; if (neu) { eben(id); klang('haken'); } } });
 };
 
 // ------------------------------------------------------------ Sparschweine
@@ -713,6 +768,7 @@ async function buche(cent, text) {
   const geschafft = !!ziel && cent > 0 && vorher < ziel && nachher >= ziel;
   const halb = !!ziel && cent > 0 && !geschafft && vorher * 2 < ziel && nachher * 2 >= ziel;
   if (geschafft || halb) eben(p.id);
+  if (cent > 0) klang('muenze');
   const gut = await tun(() => B.buchen({ schwein_id: s.id, mitglied_id: S.ich, betrag_cent: cent, weg }), {
     ok: geschafft ? `Sparziel erreicht: ${p.name}` : halb ? `${p.name} ist halb voll` : text,
     lokal: () => {
@@ -720,6 +776,7 @@ async function buche(cent, text) {
       if (s.log) s.log.unshift({ id: 'neu' + Date.now(), mitglied_id: S.ich, betrag_cent: cent, weg, am: new Date().toISOString() });
     },
   });
+  if (gut && geschafft) klang('sieg');
   if (gut && geschafft) konfetti(['#F5B841', '#FFD97A', '#F29CB4', '#FFFFFF', ich().farbe]);
   ladeBuchungen();
 }
@@ -828,6 +885,7 @@ function feierKnall(f) {
   if (S.feier !== f || f.knall) return;
   f.knall = true;
   const sieger = feierPlan(f).sieger.map(r => P(r.mitglied_id).farbe);
+  if (sieger.length) klang('sieg');
   if (sieger.length) konfetti([...sieger, ...sieger, '#F5B841', '#FFD97A', '#FFFFFF', ...S.d.mitglieder.map(m => m.farbe)]);
 }
 

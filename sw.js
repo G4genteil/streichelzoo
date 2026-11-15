@@ -1,10 +1,11 @@
 // Service Worker: hält die App-Dateien bereit, damit sie auch bei schlechtem Netz startet.
 // Regel: erst das Netz fragen (so kommen Updates sofort an), nach 3 Sekunden oder ohne Netz den gemerkten Stand nehmen.
 // Daten von Supabase laufen nicht hierüber. Bei jeder Änderung an der Dateiliste VERSION hochzählen.
-const VERSION = 'zoo-6';
+const VERSION = 'zoo-7';
 const DATEIEN = ['./', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/main.js', 'js/kern.js', 'js/zustand.js', 'js/hilfen.js', 'js/ansichten.js', 'js/aktionen.js', 'js/backend.js', 'js/demo.js', 'js/config.js',
-  'vendor/idiomorph.js', 'vendor/supabase.js', 'icons/logo.webp', 'icons/joker.webp', 'icons/apple-touch-icon.png', 'icons/icon-192.png'];
+  'vendor/idiomorph.js', 'vendor/supabase.js', 'icons/logo.webp', 'icons/joker.webp', 'icons/apple-touch-icon.png', 'icons/icon-192.png',
+  'klang/haken.mp3', 'klang/fertig.mp3', 'klang/muenze.mp3', 'klang/joker.mp3', 'klang/sieg.mp3'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(DATEIEN)).then(() => self.skipWaiting()));

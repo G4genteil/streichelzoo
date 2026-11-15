@@ -11,7 +11,7 @@ function deutsch(e) {
   if (/farbe_form|tier_kurz|bild_form/.test(m)) return 'Dieser Wert passt nicht';
   if (/betrag_grenze/.test(m)) return 'Der Betrag ist zu groß';
   if (/Anonymous sign-ins are disabled/i.test(m)) return 'In Supabase sind anonyme Anmeldungen noch ausgeschaltet';
-  if (e?.code === 'PGRST202' || e?.code === 'PGRST204' || e?.code === '42883' || /einkauf_status_check/.test(m)) return 'Dafür fehlt noch ein Update in Supabase (Dateien 05 bis 07)';
+  if (e?.code === 'PGRST202' || e?.code === 'PGRST204' || e?.code === '42883' || /einkauf_status_check/.test(m)) return 'Dafür fehlt noch ein Update in Supabase (Dateien 05 bis 08)';
   console.error('Supabase:', e);
   return 'Das hat nicht geklappt' + (m ? ` (${m.slice(0, 120)})` : '');
 }
@@ -81,7 +81,7 @@ export function supabaseBackend(sb, url) {
         x(sb.from('sparschweine_stand').select('*').is('aufgebrochen_am', null).order('created_at')),
         x(sb.from('mitteilungen').select('*').eq('gelesen', false).order('created_at', { ascending: false }).limit(30)),
         x(sb.from('familie_info').select('iban,empfaenger').maybeSingle()),
-        mild(sb.from('serien').select('id,titel,art,fuer,von,tage,foto_pflicht').order('created_at')),
+        mild(sb.from('serien').select('*').order('created_at')),
         mild(sb.from('wochen_ergebnis').select('woche,mitglied_id,punkte,platz,joker').order('woche', { ascending: false }).limit(12)),
       ]);
       const letzte = ergebnis.length ? ergebnis[0].woche : null;
@@ -100,16 +100,19 @@ export function supabaseBackend(sb, url) {
     aufgabeAnlegen: a => rpc('aufgabe_anlegen', {
       p_titel: a.titel, p_art: a.art, p_fuer: a.fuer, p_faellig: a.faellig ?? null,
       p_foto_pflicht: !!a.foto_pflicht, p_erinnerung_tage: a.erinnerung_tage ?? 7,
-      ...(a.foto ? { p_foto: a.foto } : {}) }),               // nur mitschicken, wenn es eins gibt (braucht 06_persoenlich.sql)
+      ...(a.foto ? { p_foto: a.foto } : {}),                  // nur mitschicken, wenn es eins gibt (braucht 06_persoenlich.sql)
+      ...(a.mit && a.mit.length ? { p_mit: a.mit } : {}), ...(a.ohne_punkte ? { p_ohne_punkte: true } : {}) }),   // brauchen 08_gemeinsam.sql
     aufgabeErledigen: (id, foto) => rpc('aufgabe_erledigen', { p_id: id, p_foto: foto ?? null }),
     // Lob und Grund nur mitschicken, wenn es sie gibt (brauchen 07_miteinander.sql).
     aufgabeBestaetigen: (id, punkte, lob) => rpc('aufgabe_bestaetigen', { p_id: id, p_punkte: punkte ?? null, ...(lob ? { p_lob: lob } : {}) }),
     aufgabeZurueck: (id, grund) => rpc('aufgabe_zurueckgeben', { p_id: id, ...(grund ? { p_grund: grund } : {}) }),
     aufgabeVerschieben: id => rpc('aufgabe_verschieben', { p_id: id }),
-    aufgabeLoeschen: id => x(sb.from('aufgaben').delete().eq('id', id)),
+    // Eine gemeinsame Aufgabe verschwindet bei allen Beteiligten.
+    aufgabeLoeschen: (id, gruppe) => x(gruppe ? sb.from('aufgaben').delete().eq('gruppe', gruppe) : sb.from('aufgaben').delete().eq('id', id)),
     aufgabeWiederoeffnen: id => rpc('aufgabe_wiederoeffnen', { p_id: id }),
     alleBestaetigen: () => rpc('alle_bestaetigen'),
-    serieAnlegen: s => rpc('serie_anlegen', { p_titel: s.titel, p_art: s.art, p_fuer: s.fuer, p_tage: s.tage ?? null, p_foto_pflicht: !!s.foto_pflicht }),
+    serieAnlegen: s => rpc('serie_anlegen', { p_titel: s.titel, p_art: s.art, p_fuer: s.fuer, p_tage: s.tage ?? null, p_foto_pflicht: !!s.foto_pflicht,
+      ...(s.mit && s.mit.length ? { p_mit: s.mit } : {}), ...(s.ohne_punkte ? { p_ohne_punkte: true } : {}) }),
     serieLoeschen: id => x(sb.from('serien').delete().eq('id', id)),
     jokerEinloesen: () => rpc('joker_einloesen'),
     punkteVerlauf: id => x(sb.from('punkte').select('wert,grund,am,aufgaben(titel)').eq('mitglied_id', id).order('am', { ascending: false }).limit(30)),

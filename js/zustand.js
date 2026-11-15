@@ -41,3 +41,18 @@ const UNBEKANNT = { id: null, name: 'Jemand', rolle: 'kind', farbe: '#888888', t
 export const P = id => S.d.mitglieder.find(m => m.id === id) || S.profile.find(m => m.id === id) || UNBEKANNT;
 export const ich = () => P(S.ich);
 export const eltern = () => ich().rolle === 'eltern';
+
+// Eine gemeinsame Aufgabe steht bei jedem Beteiligten in der Liste. Alle Teile tragen dieselbe Gruppe.
+export const runde = a => a.gruppe ? S.d.aufgaben.filter(x => x.gruppe === a.gruppe) : [a];
+// In Listen für andere bleibt von einer gemeinsamen Aufgabe eine Zeile.
+export const buendeln = liste => { const da = new Set(); return liste.filter(a => !a.gruppe || (!da.has(a.gruppe) && !!da.add(a.gruppe))); };
+export const andereEltern = () => S.d.mitglieder.filter(m => m.rolle === 'eltern' && m.id !== S.ich);
+// Wer darf prüfen? Ein Elternteil, das nicht selbst beteiligt ist. Machen alle Eltern mit: wer nicht abgehakt hat.
+// Dieselbe Regel steht in der Datenbank (darf_pruefen).
+export function darfPruefen(a) {
+  if (a.status !== 'wartet' || !eltern()) return false;
+  if (!a.gruppe) return a.fuer !== S.ich;
+  const dabei = runde(a).map(x => x.fuer);
+  if (!dabei.includes(S.ich)) return true;
+  return a.erledigt_von !== S.ich && S.d.mitglieder.filter(m => m.rolle === 'eltern').every(m => dabei.includes(m.id));
+}

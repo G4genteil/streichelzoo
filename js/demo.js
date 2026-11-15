@@ -21,7 +21,8 @@ export function demoBackend() {
   const aufgabe = (titel, art, fuer, status = 'offen', mehr = {}) => ({
     id: neuId(), titel, art, fuer, von: 'm1', status, verschoben: false, foto_pflicht: false, foto_pfad: null, erinnerung_tage: 7,
     faellig: art === 'tag' || art === 'frei' ? h : art === 'woche' ? wocheEnde() : null,
-    erledigt_am: status === 'offen' ? null : jetzt(), bestaetigt_von: null, created_at: jetzt(), ...mehr });
+    erledigt_am: status === 'offen' ? null : jetzt(), bestaetigt_von: null, created_at: jetzt(),
+    ohne_punkte: false, gruppe: null, erledigt_von: null, ...mehr });
   let AUF = [
     aufgabe('Spülmaschine ausräumen', 'tag', 'm4'), aufgabe('Müll rausbringen', 'tag', 'm4', 'wartet'),
     aufgabe('Zimmer saugen', 'tag', 'm3', 'offen', { foto_pflicht: true }), aufgabe('Wäsche aufhängen', 'tag', 'm3', 'wartet'),
@@ -31,6 +32,9 @@ export function demoBackend() {
     aufgabe('Alte Kleidung aussortieren', 'irgendwann', 'm4'), aufgabe('Regal im Flur anbringen', 'irgendwann', 'm2'),
     aufgabe('Fotos vom Urlaub sortieren', 'irgendwann', 'm1'),
     aufgabe('Müll rausbringen', 'tag', null, 'offen', { fuer_alle: true }),
+    aufgabe('Garage aufräumen', 'tag', 'm2', 'offen', { gruppe: 'g1' }), aufgabe('Garage aufräumen', 'tag', 'm4', 'offen', { gruppe: 'g1' }),
+    aufgabe('Bett machen', 'tag', 'm4', 'offen', { ohne_punkte: true }),
+    aufgabe('Wäsche zusammenlegen', 'tag', 'm1', 'wartet', { erledigt_von: 'm1', von: 'm2' }),
   ];
   const SERIE = { m1: 4, m2: 0, m3: 12, m4: 6 };          // Tage in Folge alles erledigt
   let SERIEN = [
@@ -88,6 +92,17 @@ export function demoBackend() {
   const anEltern = (ausser, art, titel, inhalt, ziel = null) => M.filter(m => m.rolle === 'eltern' && m.id !== ausser).forEach(m => POST[m.id].unshift({ id: neuId(), art, titel, inhalt, ziel, created_at: jetzt() }));
   const an = (wen, art, titel, inhalt, ziel = null) => POST[wen] && POST[wen].unshift({ id: neuId(), art, titel, inhalt, ziel, created_at: jetzt() });
   const finde = id => AUF.find(a => a.id === id) || nein('Diese Aufgabe gibt es nicht mehr');
+  const wert = a => a.ohne_punkte ? 0 : (PUNKTE[a.art] || 0);
+  const runde = a => a.gruppe ? AUF.filter(x => x.gruppe === a.gruppe) : [a];
+  const aufz = l => l.length < 2 ? (l[0] || '') : l.slice(0, -1).join(', ') + ' und ' + l[l.length - 1];
+  const pkt = n => `+${n} ${n === 1 ? 'Punkt' : 'Punkte'}`;
+  // Prüfen darf ein Elternteil, das nicht selbst beteiligt ist. Machen alle Eltern mit: wer nicht abgehakt hat.
+  const darf = a => {
+    if (!eltern()) return false;
+    if (!a.gruppe) return a.fuer !== ichId;
+    const dabei = runde(a).map(x => x.fuer);
+    return !dabei.includes(ichId) || (a.erledigt_von !== ichId && M.filter(m => m.rolle === 'eltern').every(m => dabei.includes(m.id)));
+  };
 
   return {
     demo: true,
@@ -128,63 +143,91 @@ export function demoBackend() {
     async vorschlaege(fuer) { return eltern() ? [...new Set(AUF.filter(a => a.fuer === fuer && a.art === 'tag').map(a => a.titel))].slice(0, 6) : []; },
     async aufgabeAnlegen(a) {
       await warte();
+      const mit = (a.mit || []).filter(id => id !== a.fuer), dabei = a.fuer ? [a.fuer, ...mit] : [];
+      if (!a.fuer && mit.length) nein('Wähle aus, wer mitmacht');
       if (!a.fuer && a.art !== 'tag' && a.art !== 'woche') nein('Für alle gibt es nur Tages- und Wochenaufgaben');
-      if (a.fuer && !M.some(m => m.id === a.fuer)) nein('Dieses Familienmitglied gibt es nicht');
+      if (dabei.some(id => !M.some(m => m.id === id))) nein('Dieses Familienmitglied gibt es nicht');
       if ((a.art === 'tag' || a.art === 'woche') && !eltern()) nein('Das können nur Eltern eintragen');
-      if (a.art === 'frei' && a.fuer !== ichId) nein('Freiwillige Aufgaben trägst du für dich selbst ein');
+      if (a.art === 'frei' && (a.fuer !== ichId || mit.length)) nein('Freiwillige Aufgaben trägst du für dich selbst ein');
       const tag = a.art === 'tag' ? (a.faellig || h) : a.art === 'woche' ? wocheEnde() : a.art === 'frei' ? h : null;
-      if (a.art === 'tag' && tag === h && a.fuer && JOKER_HEUTE.includes(a.fuer)) nein('An diesem Tag ist ein Joker eingelöst');
-      const neu = aufgabe(a.titel, a.art, a.fuer, a.art === 'frei' ? 'wartet' : 'offen', { von: ichId, fuer_alle: !a.fuer, faellig: tag, foto_pflicht: !!a.foto_pflicht, foto_pfad: a.foto || null, erinnerung_tage: a.erinnerung_tage || 7 });
-      AUF.push(neu);
-      if (a.art === 'frei') anEltern(ichId, 'erledigt', `${name(ichId)} hat freiwillig etwas erledigt`, a.titel + (a.foto ? ' (mit Foto)' : ''), 'aufgabe:' + neu.id);
-      else if (!a.fuer) M.filter(m => m.id !== ichId).forEach(m => an(m.id, 'neu', `${name(ichId)} hat eine Aufgabe für alle: ${a.titel}`, 'Wer sie zuerst erledigt, bekommt den Punkt.', 'aufgabe:' + neu.id));
-      else if (a.fuer !== ichId) an(a.fuer, 'neu', `${name(ichId)} hat eine Aufgabe für dich: ${a.titel}`, a.art === 'irgendwann' ? 'Ohne Datum' : a.art === 'woche' ? 'Bis Sonntag, 18 Uhr' : tag === h ? 'Für heute' : 'Für morgen', 'aufgabe:' + neu.id);
+      if (a.art === 'tag' && tag === h && dabei.some(id => JOKER_HEUTE.includes(id))) nein('An diesem Tag ist ein Joker eingelöst');
+      const ohne = !!a.ohne_punkte && (a.art === 'tag' || a.art === 'woche'), gruppe = dabei.length > 1 ? neuId() : null;
+      const wann = a.art === 'irgendwann' ? 'Ohne Datum' : a.art === 'woche' ? 'Bis Sonntag, 18 Uhr' : tag === h ? 'Für heute' : 'Für morgen';
+      if (!a.fuer) {
+        const neu = aufgabe(a.titel, a.art, null, 'offen', { von: ichId, fuer_alle: true, faellig: tag, foto_pflicht: !!a.foto_pflicht, ohne_punkte: ohne });
+        AUF.push(neu);
+        M.filter(m => m.id !== ichId).forEach(m => an(m.id, 'neu', `${name(ichId)} hat eine Aufgabe für alle: ${a.titel}`,
+          ohne ? 'Wer zuerst kommt, erledigt sie. Punkte gibt es dafür keine.' : 'Wer sie zuerst erledigt, bekommt den Punkt.', 'aufgabe:' + neu.id));
+        return;
+      }
+      for (const p of dabei) {
+        const neu = aufgabe(a.titel, a.art, p, a.art === 'frei' ? 'wartet' : 'offen', { von: ichId, faellig: tag, foto_pflicht: !!a.foto_pflicht,
+          foto_pfad: a.foto || null, erinnerung_tage: a.erinnerung_tage || 7, ohne_punkte: ohne, gruppe });
+        AUF.push(neu);
+        if (a.art === 'frei') anEltern(ichId, 'erledigt', `${name(ichId)} hat freiwillig etwas erledigt`, a.titel + (a.foto ? ' (mit Foto)' : ''), 'aufgabe:' + neu.id);
+        else if (p !== ichId) an(p, 'neu', `${name(ichId)} hat eine Aufgabe für ${gruppe ? 'euch' : 'dich'}: ${a.titel}`,
+          wann + (gruppe ? `. Zusammen mit ${aufz(dabei.filter(x => x !== p).map(name))}.` : '') + (!ohne ? '' : gruppe ? ' Ohne Punkte.' : ', ohne Punkte'), 'aufgabe:' + neu.id);
+      }
     },
     async aufgabeErledigen(id, foto) {
       await warte();
       const a = finde(id);
       if (!a.fuer && a.fuer_alle && a.status === 'offen') a.fuer = ichId;
       if (a.fuer !== ichId) nein(a.fuer_alle ? 'Da war jemand schneller' : 'Das ist nicht deine Aufgabe');
-      if (a.status !== 'offen') nein('Die Aufgabe ist nicht mehr offen');
+      if (a.status !== 'offen') nein(a.gruppe ? 'Das hat schon jemand von euch abgehakt' : 'Die Aufgabe ist nicht mehr offen');
       if (a.foto_pflicht && !foto && !a.foto_pfad) nein('Für diese Aufgabe ist ein Foto nötig');
-      a.hinweis = null;
-      if (foto) a.foto_pfad = foto;
-      a.erledigt_am = jetzt();
-      if (a.art === 'irgendwann' || eltern()) { a.status = 'erledigt'; if (PUNKTE[a.art]) punkt(ichId, PUNKTE[a.art], 'erledigt', a.titel); return 'erledigt'; }
-      a.status = 'wartet'; anEltern(ichId, 'erledigt', `${name(ichId)} hat erledigt: ${a.titel}`, 'Tippe, um zu bestätigen.', 'aufgabe:' + a.id); return 'wartet';
+      // Auch Eltern warten auf das andere Elternteil. Nur wer allein erzieht, ist sofort fertig.
+      const sofort = a.art === 'irgendwann' || (eltern() && !M.some(m => m.rolle === 'eltern' && m.id !== ichId));
+      for (const x of runde(a).filter(x => x.id === a.id || x.status === 'offen')) {
+        x.hinweis = null; x.erledigt_am = jetzt(); x.erledigt_von = ichId;
+        if (foto) x.foto_pfad = foto;
+        x.status = sofort ? 'erledigt' : 'wartet';
+        if (sofort && wert(x)) punkt(x.fuer, wert(x), 'erledigt', x.titel);
+      }
+      if (sofort) return 'erledigt';
+      const mit = runde(a).filter(x => x.id !== a.id).map(x => name(x.fuer));
+      anEltern(ichId, 'erledigt', `${name(ichId)} hat erledigt: ${a.titel}`, (mit.length ? `Zusammen mit ${aufz(mit)}. ` : '') + 'Tippe, um zu bestätigen.', 'aufgabe:' + a.id);
+      return 'wartet';
     },
     async aufgabeWiederoeffnen(id) {
       await warte();
       const a = finde(id);
       if (a.fuer !== ichId) nein('Das ist nicht deine Aufgabe');
+      if (a.gruppe && a.erledigt_von !== ichId) nein('Das hat jemand anderes abgehakt');
       if (a.art === 'frei' || !(a.status === 'wartet' || (a.status === 'erledigt' && !a.bestaetigt_von))) nein('Das lässt sich nicht mehr zurücknehmen');
-      if (a.status === 'erledigt' && PUNKTE[a.art]) { const i = PKT.findIndex(p => p.mitglied_id === ichId && p.aufgaben && p.aufgaben.titel === a.titel); if (i >= 0) PKT.splice(i, 1); }
-      a.status = 'offen'; a.erledigt_am = null;
-      if (a.fuer_alle) a.fuer = null;
+      for (const x of runde(a).filter(x => x.id === a.id || (x.erledigt_von === ichId && !x.bestaetigt_von && (x.status === 'wartet' || x.status === 'erledigt')))) {
+        if (x.status === 'erledigt' && wert(x)) { const i = PKT.findIndex(p => p.mitglied_id === x.fuer && p.aufgaben && p.aufgaben.titel === x.titel); if (i >= 0) PKT.splice(i, 1); }
+        x.status = 'offen'; x.erledigt_am = null; x.erledigt_von = null;
+        if (x.fuer_alle) x.fuer = null;
+      }
       M.forEach(m => { POST[m.id] = (POST[m.id] || []).filter(p => p.ziel !== 'aufgabe:' + id || p.art !== 'erledigt'); });
     },
     async alleBestaetigen() {
       await warte();
       if (!eltern()) nein('Bestätigen können nur Eltern');
-      const offen = AUF.filter(a => a.status === 'wartet' && a.fuer !== ichId);
-      offen.forEach(a => { a.status = 'erledigt'; a.bestaetigt_von = ichId; punkt(a.fuer, PUNKTE[a.art], 'erledigt', a.titel); });
+      const offen = AUF.filter(a => a.status === 'wartet' && darf(a));
+      offen.forEach(a => { a.status = 'erledigt'; a.bestaetigt_von = ichId; a.hinweis = null; if (wert(a)) punkt(a.fuer, wert(a), 'erledigt', a.titel); });
       for (const m of new Set(offen.map(a => a.fuer))) {
-        const seine = offen.filter(a => a.fuer === m), p = seine.reduce((n, a) => n + PUNKTE[a.art], 0);
-        if (seine.length === 1) an(m, 'bestaetigt', `Bestätigt, +${p} ${p === 1 ? 'Punkt' : 'Punkte'}`, seine[0].titel, 'aufgabe:' + seine[0].id);
-        else an(m, 'bestaetigt', `${seine.length} Aufgaben bestätigt, +${p} Punkte`, '', 'aufgaben');
+        if (m === ichId) continue;
+        const seine = offen.filter(a => a.fuer === m), p = seine.reduce((n, a) => n + wert(a), 0);
+        if (seine.length === 1) an(m, 'bestaetigt', `${name(ichId)} hat bestätigt: ${seine[0].titel}`, p ? `${pkt(p)} für dich.` : 'Danke fürs Erledigen.', 'aufgabe:' + seine[0].id);
+        else an(m, 'bestaetigt', `${name(ichId)} hat ${seine.length} Aufgaben bestätigt${p ? ', ' + pkt(p) : ''}`, seine.map(a => a.titel).join(', '), 'aufgaben');
       }
-      return offen.length;
+      return new Set(offen.map(a => a.gruppe || a.id)).size;
     },
     async serieAnlegen(s) {
       await warte();
       if (!eltern()) nein('Das können nur Eltern eintragen');
       const tage = s.tage && s.tage.length ? s.tage : [1, 2, 3, 4, 5, 6, 7], wt = new Date().getDay() || 7;
       if (s.art === 'tag' && s.tage && !s.tage.length) nein('Wähle mindestens einen Wochentag');
-      const serie = { id: neuId(), titel: s.titel, art: s.art, fuer: s.fuer, von: ichId, tage, foto_pflicht: !!s.foto_pflicht };
+      const mit = s.fuer ? (s.mit || []).filter(id => id !== s.fuer) : [];
+      const serie = { id: neuId(), titel: s.titel, art: s.art, fuer: s.fuer, von: ichId, tage, foto_pflicht: !!s.foto_pflicht, mit, ohne_punkte: !!s.ohne_punkte };
       SERIEN.push(serie);
-      if (s.art === 'woche' || (tage.includes(wt) && !(s.fuer && JOKER_HEUTE.includes(s.fuer)))) {
-        AUF.push(aufgabe(s.titel, s.art, s.fuer || null, 'offen', { von: ichId, foto_pflicht: !!s.foto_pflicht, serie_id: serie.id, fuer_alle: !s.fuer }));
-      }
+      if (s.art === 'tag' && !tage.includes(wt)) return;
+      const mehr = { von: ichId, foto_pflicht: !!s.foto_pflicht, serie_id: serie.id, ohne_punkte: !!s.ohne_punkte };
+      if (!s.fuer) return void AUF.push(aufgabe(s.titel, s.art, null, 'offen', { ...mehr, fuer_alle: true }));
+      const dabei = [s.fuer, ...mit].filter(id => s.art === 'woche' || !JOKER_HEUTE.includes(id)), gruppe = dabei.length > 1 ? neuId() : null;
+      dabei.forEach(p => AUF.push(aufgabe(s.titel, s.art, p, 'offen', { ...mehr, gruppe })));
     },
     async serieLoeschen(id) { if (!eltern()) nein('Das darfst du nicht'); SERIEN = SERIEN.filter(s => s.id !== id); },
     async aufgabeBestaetigen(id, punkte, lob) {
@@ -192,24 +235,32 @@ export function demoBackend() {
       const a = finde(id);
       if (!eltern()) nein('Bestätigen können nur Eltern');
       if (a.status !== 'wartet') nein('Hier gibt es nichts zu bestätigen');
-      if (a.fuer === ichId) nein('Das bestätigt das andere Elternteil');
-      const wert = a.art === 'frei' ? Math.min(Math.max(punkte || 1, 1), 2) : PUNKTE[a.art];
-      a.status = 'erledigt'; a.bestaetigt_von = ichId; a.lob = lob || null; a.hinweis = null; punkt(a.fuer, wert, 'erledigt', a.titel);
-      an(a.fuer, 'bestaetigt', `${name(ichId)} hat bestätigt: ${a.titel}`, `${lob ? lob + '! ' : ''}+${wert} ${wert === 1 ? 'Punkt' : 'Punkte'} für dich.`, 'aufgabe:' + a.id);
+      if (!darf(a)) nein('Das bestätigt das andere Elternteil');
+      for (const x of runde(a).filter(x => x.status === 'wartet')) {
+        const w = x.art === 'frei' ? Math.min(Math.max(punkte || 1, 1), 2) : wert(x);
+        x.status = 'erledigt'; x.bestaetigt_von = ichId; x.lob = lob || null; x.hinweis = null;
+        if (w) punkt(x.fuer, w, 'erledigt', x.titel);
+        if (x.fuer !== ichId) an(x.fuer, 'bestaetigt', `${name(ichId)} hat bestätigt: ${x.titel}`, `${lob ? lob + '! ' : ''}${w ? `${pkt(w)} für dich.` : 'Danke fürs Erledigen.'}`, 'aufgabe:' + x.id);
+      }
     },
     async aufgabeZurueck(id, grund) {
       const a = finde(id);
       if (!eltern()) nein('Das können nur Eltern');
-      a.status = a.art === 'frei' ? 'abgelehnt' : 'offen'; a.erledigt_am = null; a.hinweis = grund || null;
-      an(a.fuer, 'bestaetigt', name(ichId) + (a.art === 'frei' ? ' hat das nicht anerkannt' : ' sagt: bitte noch einmal'), a.titel + (grund ? ': ' + grund : ''), 'aufgabe:' + a.id);
+      if (a.status !== 'wartet') nein('Hier gibt es nichts zu prüfen');
+      if (!darf(a)) nein('Das prüft das andere Elternteil');
+      for (const x of runde(a).filter(x => x.status === 'wartet')) {
+        x.status = x.art === 'frei' ? 'abgelehnt' : 'offen'; x.erledigt_am = null; x.erledigt_von = null; x.hinweis = grund || null;
+        if (x.fuer !== ichId) an(x.fuer, 'bestaetigt', name(ichId) + (x.art === 'frei' ? ' hat das nicht anerkannt' : ' sagt: bitte noch einmal'), x.titel + (grund ? ': ' + grund : ''), 'aufgabe:' + x.id);
+      }
     },
     async aufgabeVerschieben(id) {
       const a = finde(id);
       if (a.fuer !== ichId) nein('Das ist nicht deine Aufgabe');
+      if (a.gruppe) nein('Gemeinsame Aufgaben lassen sich nicht verschieben');
       if (a.verschoben) nein('Diese Aufgabe wurde schon einmal verschoben');
       a.faellig = plus(a.faellig, 1); a.verschoben = true;
     },
-    async aufgabeLoeschen(id) { AUF = AUF.filter(a => a.id !== id); },
+    async aufgabeLoeschen(id, gruppe) { AUF = AUF.filter(a => gruppe ? a.gruppe !== gruppe : a.id !== id); },
     async jokerEinloesen() {
       await warte();
       if (JOKER_HEUTE.includes(ichId)) nein('Du hast heute schon einen Joker eingelöst');
