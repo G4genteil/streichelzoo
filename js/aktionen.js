@@ -491,11 +491,34 @@ A.sprich = id => {
   catch { hoerer = null; tastatur('Tippe auf das Mikrofon unten auf der Tastatur'); }
 };
 
-A.freiAuf = () => geh({ sheet: { k: 'frei', t: '' } });
-A.neuFrei = () => {
-  const titel = (S.sheet.t || '').trim();
+A.freiAuf = () => geh({ sheet: { k: 'frei', t: '', bild: null, bildUrl: null, laedt: false } });
+A.freiFoto = async () => {                                         // aus der Mediathek oder frisch aufgenommen
+  const blatt = S.sheet, bild = await bildWaehlen(false, 1600, false);
+  if (!bild || S.sheet !== blatt) return;
+  if (blatt.bildUrl) URL.revokeObjectURL(blatt.bildUrl);
+  blatt.bild = bild; blatt.bildUrl = URL.createObjectURL(bild);
+  render();
+};
+A.freiFotoWeg = () => {
+  const s = S.sheet;
+  if (!s || !s.bildUrl) return;
+  URL.revokeObjectURL(s.bildUrl);
+  s.bild = null; s.bildUrl = null;
+  render();
+};
+A.neuFrei = async () => {
+  const s = S.sheet, titel = (s.t || '').trim();
   if (!titel) return melde('Schreib kurz, was du gemacht hast');
-  return tun(() => B.aufgabeAnlegen({ titel, art: 'frei', fuer: S.ich }), { zu: true, ok: 'Eingetragen. Wartet auf Bestätigung.' });
+  if (s.laedt) return;
+  let foto = null;
+  if (s.bild) {
+    s.laedt = true; render();
+    try { foto = await B.fotoHoch('beweise', s.bild, S.ich); }
+    catch (e) { s.laedt = false; render(); return melde(e.message || 'Das Foto ließ sich nicht hochladen'); }
+    s.laedt = false;
+    if (S.sheet !== s) return;                                      // inzwischen geschlossen
+  }
+  return tun(() => B.aufgabeAnlegen({ titel, art: 'frei', fuer: S.ich, foto }), { zu: true, ok: 'Eingetragen. Wartet auf Bestätigung.' });
 };
 
 A.jokerAuf = () => {
@@ -550,12 +573,12 @@ A.kaufNeu = () => {
     lokal: () => { S.d.einkauf.push({ id: 'neu' + Date.now(), titel, menge, status, von: S.ich, grund: null }); },
   });
 };
-A.kaufJa = id => { const k = kauf(id); if (k) return tun(() => B.einkaufSetzen(id, { status: 'liste' }), { ok: 'Auf die Liste gesetzt', lokal: () => { k.status = 'liste'; } }); };
+A.kaufJa = id => { const k = kauf(id); if (k) return tun(() => B.einkaufSetzen(id, { status: 'liste' }), { ok: 'Auf die Liste gesetzt', lokal: () => { k.status = 'liste'; k.entschieden_von = S.ich; } }); };
 A.kaufNeinAuf = id => geh({ sheet: { k: 'nein', id, grund: '' } });
 A.kaufNein = fest => {
   const s = S.sheet, k = kauf(s.id), grund = (fest || s.grund || '').trim();
   if (!k) return A.zu();
-  return tun(() => B.einkaufSetzen(s.id, { status: 'abgelehnt', grund: grund || null }), { zu: true, ok: 'Abgelehnt', lokal: () => { k.status = 'abgelehnt'; k.grund = grund; } });
+  return tun(() => B.einkaufSetzen(s.id, { status: 'abgelehnt', grund: grund || null }), { zu: true, ok: 'Abgelehnt', lokal: () => { k.status = 'abgelehnt'; k.grund = grund; k.entschieden_von = S.ich; } });
 };
 A.kaufUm = id => {
   const k = kauf(id);

@@ -11,7 +11,7 @@ function deutsch(e) {
   if (/farbe_form|tier_kurz|bild_form/.test(m)) return 'Dieser Wert passt nicht';
   if (/betrag_grenze/.test(m)) return 'Der Betrag ist zu groß';
   if (/Anonymous sign-ins are disabled/i.test(m)) return 'In Supabase sind anonyme Anmeldungen noch ausgeschaltet';
-  if (e?.code === 'PGRST202' || e?.code === '42883' || /einkauf_status_check/.test(m)) return 'Dafür fehlt noch die Datei 05_komfort.sql in Supabase';
+  if (e?.code === 'PGRST202' || e?.code === '42883' || /einkauf_status_check/.test(m)) return 'Dafür fehlt noch ein Update in Supabase (Dateien 05 und 06)';
   console.error('Supabase:', e);
   return 'Das hat nicht geklappt' + (m ? ` (${m.slice(0, 120)})` : '');
 }
@@ -99,7 +99,8 @@ export function supabaseBackend(sb, url) {
     vorschlaege: async fuer => (await rpc('aufgaben_vorschlaege', { p_fuer: fuer })).map(v => v.titel),
     aufgabeAnlegen: a => rpc('aufgabe_anlegen', {
       p_titel: a.titel, p_art: a.art, p_fuer: a.fuer, p_faellig: a.faellig ?? null,
-      p_foto_pflicht: !!a.foto_pflicht, p_erinnerung_tage: a.erinnerung_tage ?? 7 }),
+      p_foto_pflicht: !!a.foto_pflicht, p_erinnerung_tage: a.erinnerung_tage ?? 7,
+      ...(a.foto ? { p_foto: a.foto } : {}) }),               // nur mitschicken, wenn es eins gibt (braucht 06_persoenlich.sql)
     aufgabeErledigen: (id, foto) => rpc('aufgabe_erledigen', { p_id: id, p_foto: foto ?? null }),
     aufgabeBestaetigen: (id, punkte) => rpc('aufgabe_bestaetigen', { p_id: id, p_punkte: punkte ?? null }),
     aufgabeZurueck: id => rpc('aufgabe_zurueckgeben', { p_id: id }),

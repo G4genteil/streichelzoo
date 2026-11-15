@@ -48,7 +48,8 @@ export function demoBackend() {
     { id: neuId(), titel: 'Spülmittel', menge: '', status: 'gekauft', von: 'm1', grund: null },
     { id: neuId(), titel: 'Eistee Pfirsich', menge: '2×', status: 'vorschlag', von: 'm3', grund: null },
     { id: neuId(), titel: 'Tiefkühlpizza', menge: '3×', status: 'vorschlag', von: 'm4', grund: null },
-    { id: neuId(), titel: 'Energy-Drinks', menge: '6×', status: 'abgelehnt', von: 'm3', grund: 'Zu viel Zucker' },
+    { id: neuId(), titel: 'Energy-Drinks', menge: '6×', status: 'abgelehnt', von: 'm3', grund: 'Zu viel Zucker', entschieden_von: 'm1' },
+    { id: neuId(), titel: 'Gummibärchen', menge: '', status: 'liste', von: 'm4', grund: null, entschieden_von: 'm2' },
   ];
   const termin = (titel, tag, zeit, fuer, mehr = {}) => ({ id: neuId(), titel, beginn: um(tag, zeit), ganztags: false, fuer, wiederholung: 'nie', erinnerung_min: 1440, von: 'm1', ...mehr });
   let TERM = [
@@ -127,12 +128,13 @@ export function demoBackend() {
       await warte();
       const ziel = M.find(m => m.id === a.fuer) || nein('Dieses Familienmitglied gibt es nicht');
       if ((a.art === 'tag' || a.art === 'woche') && !eltern()) nein('Das können nur Eltern eintragen');
-      if (a.art === 'irgendwann' && ziel.rolle === 'eltern' && !eltern()) nein('Eltern bekommen Aufgaben nur von Eltern');
       if (a.art === 'frei' && a.fuer !== ichId) nein('Freiwillige Aufgaben trägst du für dich selbst ein');
       const tag = a.art === 'tag' ? (a.faellig || h) : a.art === 'woche' ? wocheEnde() : a.art === 'frei' ? h : null;
       if (a.art === 'tag' && tag === h && JOKER_HEUTE.includes(a.fuer)) nein('An diesem Tag ist ein Joker eingelöst');
-      AUF.push(aufgabe(a.titel, a.art, a.fuer, a.art === 'frei' ? 'wartet' : 'offen', { von: ichId, faellig: tag, foto_pflicht: !!a.foto_pflicht, erinnerung_tage: a.erinnerung_tage || 7 }));
-      if (a.art === 'frei') anEltern(ichId, 'erledigt', `${name(ichId)} hat freiwillig etwas erledigt`, a.titel);
+      const neu = aufgabe(a.titel, a.art, a.fuer, a.art === 'frei' ? 'wartet' : 'offen', { von: ichId, faellig: tag, foto_pflicht: !!a.foto_pflicht, foto_pfad: a.foto || null, erinnerung_tage: a.erinnerung_tage || 7 });
+      AUF.push(neu);
+      if (a.art === 'frei') anEltern(ichId, 'erledigt', `${name(ichId)} hat freiwillig etwas erledigt`, a.titel + (a.foto ? ' (mit Foto)' : ''), 'aufgabe:' + neu.id);
+      else if (a.fuer !== ichId) an(a.fuer, 'neu', `${name(ichId)} hat eine Aufgabe für dich: ${a.titel}`, a.art === 'irgendwann' ? 'Ohne Datum' : a.art === 'woche' ? 'Bis Sonntag, 18 Uhr' : tag === h ? 'Für heute' : 'Für morgen', 'aufgabe:' + neu.id);
     },
     async aufgabeErledigen(id, foto) {
       await warte();
@@ -143,7 +145,7 @@ export function demoBackend() {
       if (foto) a.foto_pfad = foto;
       a.erledigt_am = jetzt();
       if (a.art === 'irgendwann' || eltern()) { a.status = 'erledigt'; if (PUNKTE[a.art]) punkt(ichId, PUNKTE[a.art], 'erledigt', a.titel); return 'erledigt'; }
-      a.status = 'wartet'; anEltern(ichId, 'erledigt', `${name(ichId)} hat eine Aufgabe erledigt`, a.titel, 'aufgabe:' + a.id); return 'wartet';
+      a.status = 'wartet'; anEltern(ichId, 'erledigt', `${name(ichId)} hat erledigt: ${a.titel}`, 'Tippe, um zu bestätigen.', 'aufgabe:' + a.id); return 'wartet';
     },
     async aufgabeWiederoeffnen(id) {
       await warte();
@@ -186,13 +188,13 @@ export function demoBackend() {
       if (a.fuer === ichId) nein('Das bestätigt das andere Elternteil');
       const wert = a.art === 'frei' ? Math.min(Math.max(punkte || 1, 1), 2) : PUNKTE[a.art];
       a.status = 'erledigt'; a.bestaetigt_von = ichId; punkt(a.fuer, wert, 'erledigt', a.titel);
-      an(a.fuer, 'bestaetigt', `Bestätigt, +${wert} ${wert === 1 ? 'Punkt' : 'Punkte'}`, a.titel);
+      an(a.fuer, 'bestaetigt', `${name(ichId)} hat bestätigt: ${a.titel}`, `+${wert} ${wert === 1 ? 'Punkt' : 'Punkte'} für dich.`, 'aufgabe:' + a.id);
     },
     async aufgabeZurueck(id) {
       const a = finde(id);
       if (!eltern()) nein('Das können nur Eltern');
       a.status = a.art === 'frei' ? 'abgelehnt' : 'offen'; a.erledigt_am = null;
-      an(a.fuer, 'bestaetigt', a.art === 'frei' ? 'Nicht anerkannt' : 'Bitte noch einmal', a.titel);
+      an(a.fuer, 'bestaetigt', name(ichId) + (a.art === 'frei' ? ' hat das nicht anerkannt' : ' sagt: bitte noch einmal'), a.titel, 'aufgabe:' + a.id);
     },
     async aufgabeVerschieben(id) {
       const a = finde(id);
@@ -215,13 +217,17 @@ export function demoBackend() {
       await warte();
       if (k.status === 'liste' && !eltern()) nein('Das darfst du nicht');
       KAUF.push({ id: neuId(), titel: k.titel, menge: k.menge || '', status: k.status, von: ichId, grund: null });
-      if (k.status === 'vorschlag') anEltern(ichId, 'einkauf', 'Neuer Vorschlag für die Einkaufsliste', k.titel);
+      if (k.status === 'vorschlag') anEltern(ichId, 'einkauf', `${name(ichId)} wünscht sich: ${k.titel}`, 'Tippe, um zu entscheiden.', 'einkauf');
     },
     async einkaufSetzen(id, werte) {
       if (!eltern()) nein('Das darfst du nicht');
       const k = KAUF.find(v => v.id === id); if (!k) return;
       const vorher = k.status; Object.assign(k, werte);
-      if (vorher === 'vorschlag' && k.status !== 'vorschlag') an(k.von, 'einkauf', k.status === 'liste' ? 'Kommt auf die Einkaufsliste' : 'Vorschlag abgelehnt', k.titel + (k.grund ? ': ' + k.grund : ''));
+      if (vorher === 'vorschlag' && k.status !== 'vorschlag') {
+        k.entschieden_von = ichId;
+        if (k.status === 'liste') an(k.von, 'einkauf', `${name(ichId)} hat deinen Vorschlag angenommen`, `${k.titel} steht jetzt auf der Einkaufsliste.`, 'einkauf');
+        else an(k.von, 'einkauf', `${name(ichId)} hat deinen Vorschlag abgelehnt`, k.titel + (k.grund ? ': ' + k.grund : ''), 'einkauf');
+      }
     },
     async einkaufLoeschen(id) { KAUF = KAUF.filter(k => k.id !== id); },
     async einkaufHaeufig() { await warte(); return [...OFT]; },

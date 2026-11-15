@@ -85,7 +85,8 @@ function aufgabeZeile(a, mitTier) {
   const stand = a.status === 'erledigt' ? 'erledigt' : a.status === 'wartet' ? 'wartet' : '';
   const info = aufgabeInfo(a);
   const marken = (a.art === 'frei' ? '<span class="marke">freiwillig</span>' : '')
-    + (a.foto_pflicht && a.status === 'offen' ? '<span class="marke">mit Foto</span>' : '');
+    + (a.foto_pflicht && a.status === 'offen' ? '<span class="marke">mit Foto</span>' : '')
+    + (a.foto_pfad && a.status === 'wartet' ? '<span class="marke">Foto</span>' : '');
   let rechts = mitTier ? tier(m, 'klein') : '';
   if (a.status === 'wartet' && eltern() && !meine) {
     rechts = `<button class="pille ja" onclick="A.bestaetige('${a.id}')">Bestätigen</button>`;
@@ -248,9 +249,11 @@ function vEinkauf() {
   const k = S.d.einkauf;
   const L = k.filter(x => x.status === 'liste'), G = k.filter(x => x.status === 'gekauft');
   const V = k.filter(x => x.status === 'vorschlag'), A_ = k.filter(x => x.status === 'abgelehnt' && x.von === S.ich);
+  const wunsch = x => x.entschieden_von && x.von && x.von !== x.entschieden_von
+    ? `Wunsch von ${esc(P(x.von).name)}, angenommen von ${esc(P(x.entschieden_von).name)}` : '';
   const kauf = x => `<div class="zeile ${x.status === 'gekauft' ? 'fertig' : ''}" style="view-transition-name:k-${x.id}">
     <button class="haken ${x.status === 'gekauft' ? 'erledigt' : ''} ${frisch(x.id) ? 'frisch' : ''}" onclick="A.kaufUm('${x.id}')" aria-label="${esc(x.titel)} abhaken">${HAKEN}</button>
-    <button class="mitte" onclick="A.kaufAuf('${x.id}')"><span class="titel">${esc(x.titel)}</span></button><span class="info">${esc(x.menge)}</span></div>`;
+    <button class="mitte" onclick="A.kaufAuf('${x.id}')"><span class="titel">${esc(x.titel)}</span>${wunsch(x) ? `<span class="info">${wunsch(x)}</span>` : ''}</button><span class="info">${esc(x.menge)}</span></div>`;
   const vorschlag = x => `<div class="zeile" style="view-transition-name:k-${x.id}">${tier(P(x.von), 'klein')}
     <div class="mitte"><span class="titel">${esc(x.titel)}${x.menge ? ` <span class="marke">${esc(x.menge)}</span>` : ''}</span>
     <span class="info">${x.von === S.ich ? 'Von dir, wartet auf Antwort' : 'Von ' + esc(P(x.von).name)}</span></div>
@@ -273,7 +276,8 @@ function vEinkauf() {
   if (V.length) s += `<h2>Vorschläge</h2>` + liste(V.map(vorschlag));
   s += `<h2>Zu kaufen</h2>` + liste(L.map(kauf), 'Alles eingekauft.');
   if (A_.length) s += `<h2>Abgelehnt</h2>` + liste(A_.map(x => `<div class="zeile" style="view-transition-name:k-${x.id}">${tier(P(x.von), 'klein')}
-    <div class="mitte"><span class="titel">${esc(x.titel)}</span><span class="info">${esc(x.grund || 'Ohne Begründung')}</span></div></div>`));
+    <div class="mitte"><span class="titel">${esc(x.titel)}</span><span class="info">${x.entschieden_von
+      ? `Abgelehnt von ${esc(P(x.entschieden_von).name)}${x.grund ? ': ' + esc(x.grund) : ''}` : esc(x.grund || 'Ohne Begründung')}</span></div></div>`));
   if (G.length) s += `<h2>Schon im Korb</h2>` + liste(G.map(kauf))
     + (eltern() ? `<button class="text-knopf" onclick="A.kaufAufraeumen()">Korb leeren</button>` : '');
   return s;
@@ -377,7 +381,7 @@ function bAufgabe(s) {
 }
 
 function bNeu(s) {
-  const wer = S.d.mitglieder.filter(m => eltern() || m.rolle === 'kind');
+  const wer = S.d.mitglieder.filter(m => eltern() || s.art === 'irgendwann' || m.rolle === 'kind');
   const titel = { tag: 'Tagesaufgabe', woche: 'Aufgabe für die Woche', irgendwann: 'Aufgabe ohne Datum' }[s.art];
   return `<h3>${titel}</h3>
     <p class="klein-titel">Für wen?</p>
@@ -413,7 +417,10 @@ function bSerie(s) {
 const bFrei = s => `<h3>Freiwillig erledigt</h3><p class="unter">Wenn ein Elternteil bestätigt, bekommst du 1 Punkt.</p>
   <p class="klein-titel">Was hast du gemacht?</p>
   ${sprechFeld(`<input class="feld voll hell" id="frei-t" value="${esc(s.t)}" oninput="A.entwurf('t', this.value)" onkeydown="if(event.key==='Enter')A.neuFrei()" placeholder="${S.hoert ? 'Ich höre zu …' : 'z. B. Wäsche gemacht'}" maxlength="120" enterkeyhint="done" autocomplete="off">`, 'frei-t')}
-  <div class="abstand"><button class="knopf" onclick="A.neuFrei()">Eintragen</button></div>`;
+  ${s.bildUrl ? `<img class="beweis" src="${esc(s.bildUrl)}" alt="Dein Foto dazu">` : ''}
+  <div class="knoepfe"><button class="knopf still" onclick="A.freiFoto()">${s.bildUrl ? 'Anderes Foto nehmen' : 'Foto hinzufügen'}</button>
+    ${s.bildUrl ? `<button class="knopf gefahr" onclick="A.freiFotoWeg()">Foto entfernen</button>` : ''}
+    <button class="knopf" onclick="A.neuFrei()" ${s.laedt ? 'disabled' : ''}>${s.laedt ? 'Foto wird hochgeladen …' : 'Eintragen'}</button></div>`;
 
 const bJoker = () => `<img class="grosskarte" src="icons/joker.webp" alt="Joker-Karte" style="view-transition-name:jokerkarte">
   <h3>Joker heute einlösen?</h3>
@@ -517,7 +524,9 @@ function bNein(s) {
 function bKauf(s) {
   const k = S.d.einkauf.find(x => x.id === s.id);
   if (!k) return `<h3>Nicht mehr auf der Liste</h3>`;
-  return `<h3>${esc(k.titel)}</h3>${k.von ? `<p class="unter">Eingetragen von ${esc(P(k.von).name)}</p>` : ''}
+  const herkunft = k.entschieden_von && k.von && k.von !== k.entschieden_von
+    ? `Wunsch von ${esc(P(k.von).name)}, angenommen von ${esc(P(k.entschieden_von).name)}` : k.von ? `Eingetragen von ${esc(P(k.von).name)}` : '';
+  return `<h3>${esc(k.titel)}</h3>${herkunft ? `<p class="unter">${herkunft}</p>` : ''}
     <p class="klein-titel">Menge</p>
     <input class="feld voll hell" value="${esc(s.menge)}" oninput="A.entwurf('menge', this.value)" onkeydown="if(event.key==='Enter')A.kaufMenge()" placeholder="z. B. 2×" maxlength="12" autocomplete="off" enterkeyhint="done">
     <div class="knoepfe"><button class="knopf" onclick="A.kaufMenge()">Speichern</button>
