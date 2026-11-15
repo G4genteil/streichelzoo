@@ -30,7 +30,9 @@ export function demoBackend() {
     aufgabe('Laub im Garten harken', 'woche', 'm2', 'erledigt'),
     aufgabe('Alte Kleidung aussortieren', 'irgendwann', 'm4'), aufgabe('Regal im Flur anbringen', 'irgendwann', 'm2'),
     aufgabe('Fotos vom Urlaub sortieren', 'irgendwann', 'm1'),
+    aufgabe('Müll rausbringen', 'tag', null, 'offen', { fuer_alle: true }),
   ];
+  const SERIE = { m1: 4, m2: 0, m3: 12, m4: 6 };          // Tage in Folge alles erledigt
   let SERIEN = [
     { id: 'r1', titel: 'Spülmaschine ausräumen', art: 'tag', fuer: 'm4', von: 'm1', tage: [1, 2, 3, 4, 5, 6, 7], foto_pflicht: false },
     { id: 'r2', titel: 'Zimmer saugen', art: 'tag', fuer: 'm3', von: 'm1', tage: [3, 6], foto_pflicht: true },
@@ -46,7 +48,7 @@ export function demoBackend() {
     { id: neuId(), titel: 'Haferflocken', menge: '', status: 'liste', von: 'm2', grund: null },
     { id: neuId(), titel: 'Äpfel', menge: '1 kg', status: 'liste', von: 'm1', grund: null },
     { id: neuId(), titel: 'Spülmittel', menge: '', status: 'gekauft', von: 'm1', grund: null },
-    { id: neuId(), titel: 'Eistee Pfirsich', menge: '2×', status: 'vorschlag', von: 'm3', grund: null },
+    { id: neuId(), titel: 'Eistee Pfirsich', menge: '2×', status: 'vorschlag', von: 'm3', grund: null, foto_pfad: 'icons/logo.webp' },
     { id: neuId(), titel: 'Tiefkühlpizza', menge: '3×', status: 'vorschlag', von: 'm4', grund: null },
     { id: neuId(), titel: 'Energy-Drinks', menge: '6×', status: 'abgelehnt', von: 'm3', grund: 'Zu viel Zucker', entschieden_von: 'm1' },
     { id: neuId(), titel: 'Gummibärchen', menge: '', status: 'liste', von: 'm4', grund: null, entschieden_von: 'm2' },
@@ -114,7 +116,7 @@ export function demoBackend() {
 
     async laden() {
       await warte();
-      const best = M.map(m => ({ mitglied_id: m.id, joker: JOKER[m.id] || 0,
+      const best = M.map(m => ({ mitglied_id: m.id, joker: JOKER[m.id] || 0, serie: SERIE[m.id] || 0,
         woche: PKT.filter(p => p.mitglied_id === m.id && p.woche).reduce((n, p) => n + p.wert, 0),
         gesamt: PKT.filter(p => p.mitglied_id === m.id).reduce((n, p) => n + p.wert, 0) }));
       return kopie({ mitglieder: M, aufgaben: AUF, best, jokerHeute: JOKER_HEUTE, einkauf: KAUF, termine: TERM, merk: MERK,
@@ -126,22 +128,26 @@ export function demoBackend() {
     async vorschlaege(fuer) { return eltern() ? [...new Set(AUF.filter(a => a.fuer === fuer && a.art === 'tag').map(a => a.titel))].slice(0, 6) : []; },
     async aufgabeAnlegen(a) {
       await warte();
-      const ziel = M.find(m => m.id === a.fuer) || nein('Dieses Familienmitglied gibt es nicht');
+      if (!a.fuer && a.art !== 'tag' && a.art !== 'woche') nein('Für alle gibt es nur Tages- und Wochenaufgaben');
+      if (a.fuer && !M.some(m => m.id === a.fuer)) nein('Dieses Familienmitglied gibt es nicht');
       if ((a.art === 'tag' || a.art === 'woche') && !eltern()) nein('Das können nur Eltern eintragen');
       if (a.art === 'frei' && a.fuer !== ichId) nein('Freiwillige Aufgaben trägst du für dich selbst ein');
       const tag = a.art === 'tag' ? (a.faellig || h) : a.art === 'woche' ? wocheEnde() : a.art === 'frei' ? h : null;
-      if (a.art === 'tag' && tag === h && JOKER_HEUTE.includes(a.fuer)) nein('An diesem Tag ist ein Joker eingelöst');
-      const neu = aufgabe(a.titel, a.art, a.fuer, a.art === 'frei' ? 'wartet' : 'offen', { von: ichId, faellig: tag, foto_pflicht: !!a.foto_pflicht, foto_pfad: a.foto || null, erinnerung_tage: a.erinnerung_tage || 7 });
+      if (a.art === 'tag' && tag === h && a.fuer && JOKER_HEUTE.includes(a.fuer)) nein('An diesem Tag ist ein Joker eingelöst');
+      const neu = aufgabe(a.titel, a.art, a.fuer, a.art === 'frei' ? 'wartet' : 'offen', { von: ichId, fuer_alle: !a.fuer, faellig: tag, foto_pflicht: !!a.foto_pflicht, foto_pfad: a.foto || null, erinnerung_tage: a.erinnerung_tage || 7 });
       AUF.push(neu);
       if (a.art === 'frei') anEltern(ichId, 'erledigt', `${name(ichId)} hat freiwillig etwas erledigt`, a.titel + (a.foto ? ' (mit Foto)' : ''), 'aufgabe:' + neu.id);
+      else if (!a.fuer) M.filter(m => m.id !== ichId).forEach(m => an(m.id, 'neu', `${name(ichId)} hat eine Aufgabe für alle: ${a.titel}`, 'Wer sie zuerst erledigt, bekommt den Punkt.', 'aufgabe:' + neu.id));
       else if (a.fuer !== ichId) an(a.fuer, 'neu', `${name(ichId)} hat eine Aufgabe für dich: ${a.titel}`, a.art === 'irgendwann' ? 'Ohne Datum' : a.art === 'woche' ? 'Bis Sonntag, 18 Uhr' : tag === h ? 'Für heute' : 'Für morgen', 'aufgabe:' + neu.id);
     },
     async aufgabeErledigen(id, foto) {
       await warte();
       const a = finde(id);
-      if (a.fuer !== ichId) nein('Das ist nicht deine Aufgabe');
+      if (!a.fuer && a.fuer_alle && a.status === 'offen') a.fuer = ichId;
+      if (a.fuer !== ichId) nein(a.fuer_alle ? 'Da war jemand schneller' : 'Das ist nicht deine Aufgabe');
       if (a.status !== 'offen') nein('Die Aufgabe ist nicht mehr offen');
       if (a.foto_pflicht && !foto && !a.foto_pfad) nein('Für diese Aufgabe ist ein Foto nötig');
+      a.hinweis = null;
       if (foto) a.foto_pfad = foto;
       a.erledigt_am = jetzt();
       if (a.art === 'irgendwann' || eltern()) { a.status = 'erledigt'; if (PUNKTE[a.art]) punkt(ichId, PUNKTE[a.art], 'erledigt', a.titel); return 'erledigt'; }
@@ -154,6 +160,7 @@ export function demoBackend() {
       if (a.art === 'frei' || !(a.status === 'wartet' || (a.status === 'erledigt' && !a.bestaetigt_von))) nein('Das lässt sich nicht mehr zurücknehmen');
       if (a.status === 'erledigt' && PUNKTE[a.art]) { const i = PKT.findIndex(p => p.mitglied_id === ichId && p.aufgaben && p.aufgaben.titel === a.titel); if (i >= 0) PKT.splice(i, 1); }
       a.status = 'offen'; a.erledigt_am = null;
+      if (a.fuer_alle) a.fuer = null;
       M.forEach(m => { POST[m.id] = (POST[m.id] || []).filter(p => p.ziel !== 'aufgabe:' + id || p.art !== 'erledigt'); });
     },
     async alleBestaetigen() {
@@ -175,26 +182,26 @@ export function demoBackend() {
       if (s.art === 'tag' && s.tage && !s.tage.length) nein('Wähle mindestens einen Wochentag');
       const serie = { id: neuId(), titel: s.titel, art: s.art, fuer: s.fuer, von: ichId, tage, foto_pflicht: !!s.foto_pflicht };
       SERIEN.push(serie);
-      if (s.art === 'woche' || (tage.includes(wt) && !JOKER_HEUTE.includes(s.fuer))) {
-        AUF.push(aufgabe(s.titel, s.art, s.fuer, 'offen', { von: ichId, foto_pflicht: !!s.foto_pflicht, serie_id: serie.id }));
+      if (s.art === 'woche' || (tage.includes(wt) && !(s.fuer && JOKER_HEUTE.includes(s.fuer)))) {
+        AUF.push(aufgabe(s.titel, s.art, s.fuer || null, 'offen', { von: ichId, foto_pflicht: !!s.foto_pflicht, serie_id: serie.id, fuer_alle: !s.fuer }));
       }
     },
     async serieLoeschen(id) { if (!eltern()) nein('Das darfst du nicht'); SERIEN = SERIEN.filter(s => s.id !== id); },
-    async aufgabeBestaetigen(id, punkte) {
+    async aufgabeBestaetigen(id, punkte, lob) {
       await warte();
       const a = finde(id);
       if (!eltern()) nein('Bestätigen können nur Eltern');
       if (a.status !== 'wartet') nein('Hier gibt es nichts zu bestätigen');
       if (a.fuer === ichId) nein('Das bestätigt das andere Elternteil');
       const wert = a.art === 'frei' ? Math.min(Math.max(punkte || 1, 1), 2) : PUNKTE[a.art];
-      a.status = 'erledigt'; a.bestaetigt_von = ichId; punkt(a.fuer, wert, 'erledigt', a.titel);
-      an(a.fuer, 'bestaetigt', `${name(ichId)} hat bestätigt: ${a.titel}`, `+${wert} ${wert === 1 ? 'Punkt' : 'Punkte'} für dich.`, 'aufgabe:' + a.id);
+      a.status = 'erledigt'; a.bestaetigt_von = ichId; a.lob = lob || null; a.hinweis = null; punkt(a.fuer, wert, 'erledigt', a.titel);
+      an(a.fuer, 'bestaetigt', `${name(ichId)} hat bestätigt: ${a.titel}`, `${lob ? lob + '! ' : ''}+${wert} ${wert === 1 ? 'Punkt' : 'Punkte'} für dich.`, 'aufgabe:' + a.id);
     },
-    async aufgabeZurueck(id) {
+    async aufgabeZurueck(id, grund) {
       const a = finde(id);
       if (!eltern()) nein('Das können nur Eltern');
-      a.status = a.art === 'frei' ? 'abgelehnt' : 'offen'; a.erledigt_am = null;
-      an(a.fuer, 'bestaetigt', name(ichId) + (a.art === 'frei' ? ' hat das nicht anerkannt' : ' sagt: bitte noch einmal'), a.titel, 'aufgabe:' + a.id);
+      a.status = a.art === 'frei' ? 'abgelehnt' : 'offen'; a.erledigt_am = null; a.hinweis = grund || null;
+      an(a.fuer, 'bestaetigt', name(ichId) + (a.art === 'frei' ? ' hat das nicht anerkannt' : ' sagt: bitte noch einmal'), a.titel + (grund ? ': ' + grund : ''), 'aufgabe:' + a.id);
     },
     async aufgabeVerschieben(id) {
       const a = finde(id);
@@ -216,7 +223,7 @@ export function demoBackend() {
     async einkaufNeu(k) {
       await warte();
       if (k.status === 'liste' && !eltern()) nein('Das darfst du nicht');
-      KAUF.push({ id: neuId(), titel: k.titel, menge: k.menge || '', status: k.status, von: ichId, grund: null });
+      KAUF.push({ id: neuId(), titel: k.titel, menge: k.menge || '', status: k.status, von: ichId, grund: null, foto_pfad: k.foto_pfad || null });
       if (k.status === 'vorschlag') anEltern(ichId, 'einkauf', `${name(ichId)} wünscht sich: ${k.titel}`, 'Tippe, um zu entscheiden.', 'einkauf');
     },
     async einkaufSetzen(id, werte) {
@@ -230,6 +237,13 @@ export function demoBackend() {
       }
     },
     async einkaufLoeschen(id) { KAUF = KAUF.filter(k => k.id !== id); },
+    async einkaufLos() {
+      await warte();
+      if (!eltern()) nein('Das können nur Eltern');
+      const n = KAUF.filter(k => k.status === 'liste').length;
+      M.filter(m => m.id !== ichId).forEach(m => an(m.id, 'einkauf', `${name(ichId)} geht jetzt einkaufen`, `${n} Sachen stehen auf der Liste. Fehlt noch etwas?`, 'einkauf'));
+      return n;
+    },
     async einkaufHaeufig() { await warte(); return [...OFT]; },
     async einkaufAufraeumen() {
       if (!eltern()) nein('Das darfst du nicht');

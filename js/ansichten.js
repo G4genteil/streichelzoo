@@ -4,7 +4,7 @@
 import { S, P, ich, eltern } from './zustand.js';
 import {
   esc, euro, heute, plus, montag, tagVon, iso, wocheEnde, fmtLang, fmtKurz, fmtDatum, fmtMonat, fmtZeit,
-  wochentagKurz, relTag, relKurz, fmtTag, PUNKTE, ABZUG, TIERE, FARBEN, WOCHENTAGE, HAKEN, MIKRO, ICON, TABS,
+  wochentagKurz, relTag, relKurz, fmtTag, PUNKTE, ABZUG, TIERE, FARBEN, WOCHENTAGE, HAKEN, MIKRO, KAMERA, FLAMME, LOB, ALLE, ICON, TABS,
 } from './hilfen.js';
 
 // ------------------------------------------------------------ Bausteine
@@ -70,9 +70,11 @@ export function aufgabeInfo(a) {
     case 'erledigt': return PUNKTE[a.art] && a.art !== 'frei' ? `Erledigt, +${PUNKTE[a.art]}` : 'Erledigt';
     case 'wartet': return 'Wartet auf Bestätigung';
     case 'verpasst': return `Verpasst, −${ABZUG[a.art] || 0}`;
-    case 'entfallen': return 'Entfällt, Joker eingelöst';
+    case 'entfallen': return a.fuer ? 'Entfällt, Joker eingelöst' : 'Hat niemand gemacht';
     case 'abgelehnt': return 'Nicht anerkannt';
   }
+  if (!a.fuer) return (a.art === 'woche' ? 'Bis Sonntag. ' : a.faellig === plus(h, 1) ? 'Morgen. ' : '') + 'Wer zuerst kommt, bekommt ' + (PUNKTE[a.art] === 1 ? 'den Punkt' : `${PUNKTE[a.art]} Punkte`);
+  if (a.hinweis) return 'Noch einmal: ' + esc(a.hinweis);
   if (a.art === 'woche') return 'Bis Sonntag, 18 Uhr';
   if (a.art === 'irgendwann') return 'Ohne Datum';
   if (a.faellig === h) return a.verschoben ? 'Heute, von gestern verschoben' : 'Heute';
@@ -81,12 +83,13 @@ export function aufgabeInfo(a) {
 }
 
 function aufgabeZeile(a, mitTier) {
-  const m = P(a.fuer), meine = a.fuer === S.ich;
+  const m = a.fuer ? P(a.fuer) : ALLE, meine = a.fuer === S.ich;
   const stand = a.status === 'erledigt' ? 'erledigt' : a.status === 'wartet' ? 'wartet' : '';
   const info = aufgabeInfo(a);
   const marken = (a.art === 'frei' ? '<span class="marke">freiwillig</span>' : '')
     + (a.foto_pflicht && a.status === 'offen' ? '<span class="marke">mit Foto</span>' : '')
-    + (a.foto_pfad && a.status === 'wartet' ? '<span class="marke">Foto</span>' : '');
+    + (a.foto_pfad && a.status === 'wartet' ? '<span class="marke">Foto</span>' : '')
+    + (a.fuer_alle && a.fuer ? '<span class="marke">für alle</span>' : '');
   let rechts = mitTier ? tier(m, 'klein') : '';
   if (a.status === 'wartet' && eltern() && !meine) {
     rechts = `<button class="pille ja" onclick="A.bestaetige('${a.id}')">Bestätigen</button>`;
@@ -195,7 +198,11 @@ function vHeute() {
   const post = d.post.filter(p => sichtbar.includes(p.art));
   const frei = d.jokerHeute.includes(me);
 
-  let s = `<div class="kopf"><div><h1>Hallo ${esc(ich().name)}</h1><p class="unter">${fmtLang(h)}</p></div>
+  const fuerAlle = d.aufgaben.filter(a => !a.fuer && a.status === 'offen' && ((a.art === 'tag' && a.faellig === h) || (a.art === 'woche' && a.faellig === wocheEnde())));
+  const serie = (d.best.find(b => b.mitglied_id === me) || {}).serie || 0;
+
+  let s = `<div class="kopf"><div><h1>Hallo ${esc(ich().name)}</h1><p class="unter">${fmtLang(h)}</p>
+    ${serie > 1 ? `<p class="serie-zeile">${FLAMME}${serie} Tage in Folge alles erledigt</p>` : ''}</div>
     <button class="feder" onclick="A.einstAuf()" aria-label="Einstellungen">${tier(ich())}</button></div>`;
   if (S.ladeFehler) s += `<p class="banner" role="alert">${esc(S.ladeFehler)}</p>`;
 
@@ -211,6 +218,7 @@ function vHeute() {
     if (warten.length > 1) s += `<button class="text-knopf" onclick="A.alleBestaetigen()">Alle ${warten.length} bestätigen</button>`;
   }
   s += `<h2>Heute dran</h2>` + liste(dran.map(a => aufgabeZeile(a)), frei ? 'Joker eingelöst. Heute hast du frei.' : 'Heute hast du nichts zu tun.');
+  if (fuerAlle.length) s += `<h2>Für alle</h2>` + liste(fuerAlle.map(a => aufgabeZeile(a, true)));
   if (morgen.length) s += `<h2>Morgen</h2>` + liste(morgen.map(a => aufgabeZeile(a)));
   if (woche.length) s += `<h2>Diese Woche</h2>` + liste(woche.map(a => aufgabeZeile(a)));
   if (termine.length) s += `<h2>Deine Termine heute</h2>` + liste(termine.map(e => terminZeile(e)));
@@ -227,17 +235,19 @@ function vAufgaben() {
     irgendwann: a => a.art === 'irgendwann',
   }[S.seg];
   const alle = sortiert(S.d.aufgaben.filter(passt));
-  const meine = alle.filter(a => a.fuer === me), andere = alle.filter(a => a.fuer !== me);
+  const meine = alle.filter(a => a.fuer === me), andere = alle.filter(a => a.fuer && a.fuer !== me);
+  const fuerAlle = alle.filter(a => !a.fuer && a.status === 'offen');
   const darfPlus = eltern() || S.seg === 'irgendwann';
 
   let s = `<div class="kopf"><h1>Aufgaben</h1>${darfPlus ? `<button class="plus" onclick="A.neuAuf()" aria-label="Aufgabe eintragen">+</button>` : ''}</div>`
     + schalter('seg', [['tag', 'Heute'], ['woche', 'Woche'], ['irgendwann', 'Irgendwann']]);
   s += `<h2 style="margin-top:8px">Deine</h2>` + liste(meine.map(a => aufgabeZeile(a)), 'Hier ist nichts für dich offen.');
+  if (fuerAlle.length) s += `<h2>Für alle</h2>` + liste(fuerAlle.map(a => aufgabeZeile(a, true)));
   if (andere.length) s += `<h2>Die anderen</h2>` + liste(andere.map(a => aufgabeZeile(a, true)));
   const serien = eltern() ? S.d.serien.filter(x => x.art === S.seg) : [];
   if (serien.length) {
-    s += `<h2>Wiederkehrend</h2>` + liste(serien.map(x => `<button class="zeile" style="view-transition-name:s-${x.id}" onclick="A.serieAuf('${x.id}')">${tier(P(x.fuer), 'klein')}
-      <span class="mitte"><span class="titel">${esc(x.titel)}</span><span class="info">${esc(P(x.fuer).name)}, ${serieText(x)}</span></span>${pfeil}</button>`));
+    s += `<h2>Wiederkehrend</h2>` + liste(serien.map(x => `<button class="zeile" style="view-transition-name:s-${x.id}" onclick="A.serieAuf('${x.id}')">${tier(x.fuer ? P(x.fuer) : ALLE, 'klein')}
+      <span class="mitte"><span class="titel">${esc(x.titel)}</span><span class="info">${x.fuer ? esc(P(x.fuer).name) : 'Für alle'}, ${serieText(x)}</span></span>${pfeil}</button>`));
   }
   if (S.seg === 'tag') s += `<div class="abstand"><button class="knopf still" onclick="A.freiAuf()">Freiwillig etwas erledigt?</button></div>`;
   return s;
@@ -251,12 +261,25 @@ function vEinkauf() {
   const V = k.filter(x => x.status === 'vorschlag'), A_ = k.filter(x => x.status === 'abgelehnt' && x.von === S.ich);
   const wunsch = x => x.entschieden_von && x.von && x.von !== x.entschieden_von
     ? `Wunsch von ${esc(P(x.von).name)}, angenommen von ${esc(P(x.entschieden_von).name)}` : '';
+  const bild = x => x.foto_pfad ? `<button class="pille" onclick="A.kaufBild('${x.id}')">Foto</button>` : '';
+
+  // Im Laden: nur die Liste, groß, die ganze Zeile hakt ab. Der Bildschirm bleibt an.
+  if (S.imLaden && eltern()) {
+    const gross = x => `<button class="zeile laden ${x.status === 'gekauft' ? 'fertig' : ''}" style="view-transition-name:k-${x.id}" onclick="A.kaufUm('${x.id}')" aria-label="${esc(x.titel)} abhaken">
+      <span class="haken ${x.status === 'gekauft' ? 'erledigt' : ''} ${frisch(x.id) ? 'frisch' : ''}">${HAKEN}</span>
+      <span class="mitte"><span class="titel">${esc(x.titel)}</span>${wunsch(x) ? `<span class="info">${wunsch(x)}</span>` : ''}</span><span class="info">${esc(x.menge)}</span></button>`;
+    return `<div class="kopf"><div><h1>Im Laden</h1><p class="unter">${L.length ? `Noch ${L.length} ${L.length === 1 ? 'Sache' : 'Sachen'}` : 'Alles im Korb'}</p></div>
+      <button class="pille ja" onclick="A.ladenAus()">Fertig</button></div>
+      <div class="abstand">${liste(L.map(gross), 'Alles eingekauft.')}</div>
+      ${G.length ? `<h2>Im Korb</h2>` + liste(G.map(gross)) : ''}`;
+  }
+
   const kauf = x => `<div class="zeile ${x.status === 'gekauft' ? 'fertig' : ''}" style="view-transition-name:k-${x.id}">
     <button class="haken ${x.status === 'gekauft' ? 'erledigt' : ''} ${frisch(x.id) ? 'frisch' : ''}" onclick="A.kaufUm('${x.id}')" aria-label="${esc(x.titel)} abhaken">${HAKEN}</button>
-    <button class="mitte" onclick="A.kaufAuf('${x.id}')"><span class="titel">${esc(x.titel)}</span>${wunsch(x) ? `<span class="info">${wunsch(x)}</span>` : ''}</button><span class="info">${esc(x.menge)}</span></div>`;
+    <button class="mitte" onclick="A.kaufAuf('${x.id}')"><span class="titel">${esc(x.titel)}</span>${wunsch(x) ? `<span class="info">${wunsch(x)}</span>` : ''}</button>${bild(x)}<span class="info">${esc(x.menge)}</span></div>`;
   const vorschlag = x => `<div class="zeile" style="view-transition-name:k-${x.id}">${tier(P(x.von), 'klein')}
     <div class="mitte"><span class="titel">${esc(x.titel)}${x.menge ? ` <span class="marke">${esc(x.menge)}</span>` : ''}</span>
-    <span class="info">${x.von === S.ich ? 'Von dir, wartet auf Antwort' : 'Von ' + esc(P(x.von).name)}</span></div>
+    <span class="info">${x.von === S.ich ? 'Von dir, wartet auf Antwort' : 'Von ' + esc(P(x.von).name)}</span></div>${bild(x)}
     ${eltern() ? `<button class="pille nein" onclick="A.kaufNeinAuf('${x.id}')">Nein</button><button class="pille ja" onclick="A.kaufJa('${x.id}')">Ja</button>`
       : x.von === S.ich ? `<button class="pille" onclick="A.kaufWeg('${x.id}')">Zurückziehen</button>` : ''}</div>`;
 
@@ -266,15 +289,18 @@ function vEinkauf() {
 
   let s = `<div class="kopf"><h1>Einkaufsliste</h1></div>
     <div class="eingabe" style="margin:16px 0 4px">
-      <input class="feld hell" id="kauf" value="${esc(S.kaufT)}" oninput="A.kaufTippen(this.value)" onkeydown="if(event.key==='Enter')A.kaufNeu()"
+      <div class="sprech"><input class="feld hell" id="kauf" value="${esc(S.kaufT)}" oninput="A.kaufTippen(this.value)" onkeydown="if(event.key==='Enter')A.kaufNeu()"
         placeholder="${eltern() ? 'Was fehlt?' : 'Was wünschst du dir?'}" aria-label="Artikel" maxlength="80" enterkeyhint="done" autocomplete="off">
+        <button class="mikro ${S.kaufBild ? 'dabei' : ''}" onclick="A.kaufFoto()" aria-label="${S.kaufBild ? 'Anderes Foto nehmen' : 'Foto dazu'}">${KAMERA}</button></div>
       <input class="feld hell" id="menge" value="${esc(S.kaufM)}" oninput="A.setz('kaufM', this.value)" onkeydown="if(event.key==='Enter')A.kaufNeu()"
         placeholder="Menge" style="flex:0 0 78px" aria-label="Menge" maxlength="12" enterkeyhint="done" autocomplete="off">
       <button class="knopf" onclick="A.kaufNeu()">${eltern() ? 'Dazu' : 'Vorschlagen'}</button></div>`;
+  if (S.kaufBild) s += `<p class="hinweis">Ein Foto hängt am nächsten Eintrag. <button class="text-link" onclick="A.kaufFotoWeg()">Entfernen</button></p>`;
   if (oft.length) s += `<div class="chips oft" aria-label="Oft gekauft">${oft.map(t =>
     `<button class="chip nur" data-t="${esc(t)}" onclick="A.kaufSchnell(this.dataset.t)" aria-label="${esc(t)} ${eltern() ? 'auf die Liste setzen' : 'vorschlagen'}"><span aria-hidden="true">+</span>${esc(t)}</button>`).join('')}</div>`;
   if (V.length) s += `<h2>Vorschläge</h2>` + liste(V.map(vorschlag));
   s += `<h2>Zu kaufen</h2>` + liste(L.map(kauf), 'Alles eingekauft.');
+  if (eltern() && L.length) s += `<div class="abstand"><button class="knopf still" onclick="A.ladenAn()">Ich gehe einkaufen</button></div>`;
   if (A_.length) s += `<h2>Abgelehnt</h2>` + liste(A_.map(x => `<div class="zeile" style="view-transition-name:k-${x.id}">${tier(P(x.von), 'klein')}
     <div class="mitte"><span class="titel">${esc(x.titel)}</span><span class="info">${x.entschieden_von
       ? `Abgelehnt von ${esc(P(x.entschieden_von).name)}${x.grund ? ': ' + esc(x.grund) : ''}` : esc(x.grund || 'Ohne Begründung')}</span></div></div>`));
@@ -317,21 +343,22 @@ function vFamilie() {
     const max = Math.max(1, ...reihe.map(m => wert(m.id)));
     s += liste(reihe.map(m => {
       const w = wert(m.id), platz = 1 + reihe.filter(x => wert(x.id) > w).length;
-      const jk = (S.d.best.find(b => b.mitglied_id === m.id) || {}).joker || 0;
+      const stand = S.d.best.find(b => b.mitglied_id === m.id) || {}, jk = stand.joker || 0, sr = stand.serie || 0;
       return `<button class="zeile" style="view-transition-name:r-${m.id}" onclick="A.verlaufAuf('${m.id}')"><span class="rang">${platz}</span>${tier(m)}
-        <span class="mitte" style="--c:${esc(m.farbe)}"><span class="titel">${esc(m.name)}${m.id === S.ich ? ' (du)' : ''}${jk ? `<span class="marke">${jk} Joker</span>` : ''}</span>
+        <span class="mitte" style="--c:${esc(m.farbe)}"><span class="titel">${esc(m.name)}${m.id === S.ich ? ' (du)' : ''}${sr > 1 ? `<span class="marke heiss" aria-label="${sr} Tage in Folge alles erledigt">${FLAMME}${sr}</span>` : ''}${jk ? `<span class="marke">${jk} Joker</span>` : ''}</span>
         <span class="balken"><i style="width:${Math.max(w, 0) / max * 100}%"></i></span></span><span class="zahl ${w < 0 ? 'minus' : ''}">${w}</span></button>`;
     }), 'Noch niemand da.');
-    s += `<p class="hinweis">${S.bestArt === 'woche' ? 'Die Woche endet Sonntag um 18 Uhr. Platz 1 bekommt eine Joker-Karte.' : 'Alle Punkte seit dem Start.'}</p>
+    s += `<p class="hinweis">${S.bestArt === 'woche' ? 'Die Woche endet Sonntag um 18 Uhr. Platz 1 bekommt eine Joker-Karte.' : 'Alle Punkte seit dem Start.'}
+      Die Flamme zählt die Tage in Folge, an denen alle Tagesaufgaben erledigt wurden.</p>
       <div class="knoepfe"><button class="knopf still" onclick="A.geh({bestArt:'${S.bestArt === 'woche' ? 'gesamt' : 'woche'}'})">${S.bestArt === 'woche' ? 'Ewige Bestenliste zeigen' : 'Diese Woche zeigen'}</button>
       ${S.d.endstand ? `<button class="knopf still" onclick="A.feierAuf()">Letzte Woche ansehen</button>` : ''}</div>`
       + jokerKarte();
   }
 
   if (S.fam === 'spar') {
-    s += `<div class="stall">${S.d.schweine.map(p => `<button class="schwein" onclick="A.schweinAuf('${p.id}')"><span class="nase" aria-hidden="true">🐷</span>
+    s += `<div class="stall">${S.d.schweine.map(p => { const voll = p.ziel_cent && p.stand_cent >= p.ziel_cent; return `<button class="schwein ${voll ? 'voll' : ''} ${frisch(p.id) ? 'huepft' : ''}" onclick="A.schweinAuf('${p.id}')"><span class="nase" aria-hidden="true">🐷</span>
       <span class="titel">${esc(p.name)}</span><span class="summe">${euro(p.stand_cent)}</span>
-      ${p.ziel_cent ? `<span class="balken"><i style="width:${Math.min(p.stand_cent / p.ziel_cent, 1) * 100}%"></i></span><span class="von">von ${euro(p.ziel_cent)}</span>` : ''}</button>`).join('')}
+      ${p.ziel_cent ? `<span class="balken"><i style="width:${Math.min(p.stand_cent / p.ziel_cent, 1) * 100}%"></i></span><span class="von">${voll ? 'Ziel erreicht' : 'von ' + euro(p.ziel_cent)}</span>` : ''}</button>`; }).join('')}
       <button class="schwein neu" onclick="A.neuSchweinAuf()">Neues Sparschwein</button></div>`;
   }
 
@@ -352,27 +379,33 @@ function vFamilie() {
 function bAufgabe(s) {
   const a = S.d.aufgaben.find(x => x.id === s.id);
   if (!a) return `<h3>Diese Aufgabe gibt es nicht mehr</h3>`;
-  const m = P(a.fuer), meine = a.fuer === S.ich, serie = a.serie_id && S.d.serien.find(x => x.id === a.serie_id);
-  let h = `<div class="blatt-kopf">${tier(m)}<div><h3>${esc(a.titel)}</h3><p class="unter">${ART[a.art]} für ${esc(m.name)}</p></div></div>
+  const frei = !a.fuer, m = frei ? ALLE : P(a.fuer), meine = a.fuer === S.ich, serie = a.serie_id && S.d.serien.find(x => x.id === a.serie_id);
+  const pruefen = a.status === 'wartet' && eltern() && !meine;
+  let h = `<div class="blatt-kopf">${tier(m)}<div><h3>${esc(a.titel)}</h3><p class="unter">${ART[a.art]} für ${frei ? 'alle' : esc(m.name)}${a.fuer_alle && !frei ? ' (war für alle)' : ''}</p></div></div>
     <div class="liste eng"><div class="zeile"><span class="mitte titel">Stand</span><span class="info">${aufgabeInfo(a)}</span></div>
     ${a.von && a.von !== a.fuer ? `<div class="zeile"><span class="mitte titel">Eingetragen von</span><span class="info">${esc(P(a.von).name)}</span></div>` : ''}
     ${a.foto_pflicht ? `<div class="zeile"><span class="mitte titel">Foto als Beweis</span><span class="info">${a.foto_pfad ? 'Ist dabei' : 'Wird verlangt'}</span></div>` : ''}
-    ${serie ? `<div class="zeile"><span class="mitte titel">Wiederholt sich</span><span class="info">${gross(serieText(serie))}</span></div>` : ''}</div>`;
+    ${serie ? `<div class="zeile"><span class="mitte titel">Wiederholt sich</span><span class="info">${gross(serieText(serie))}</span></div>` : ''}
+    ${a.hinweis ? `<div class="zeile"><span class="mitte"><span class="titel">Das fehlt noch</span><span class="info">${esc(a.hinweis)}</span></span></div>` : ''}
+    ${a.lob ? `<div class="zeile"><span class="mitte"><span class="titel">${esc(a.lob)}</span><span class="info">Lob von ${esc(P(a.bestaetigt_von).name)}</span></span></div>` : ''}</div>`;
   if (a.foto_pfad) h += s.foto ? `<img class="beweis" src="${esc(s.foto)}" alt="Foto zur Aufgabe">` : `<div class="beweis laedt">Foto wird geladen …</div>`;
 
+  if (pruefen) h += `<p class="klein-titel">Ein Lob dazu?</p><div class="chips">${LOB.map(l =>
+    `<button class="chip nur ${s.lob === l ? 'an' : ''}" data-l="${esc(l)}" onclick="A.lobWahl(this.dataset.l)">${esc(l)}</button>`).join('')}</div>`;
+
   const k = [];
-  if (a.status === 'offen' && meine) {
+  if (a.status === 'offen' && (meine || frei)) {
     if (a.foto_pflicht && !a.foto_pfad) k.push(`<button class="knopf" onclick="A.mitFoto('${a.id}')">Foto aufnehmen und abhaken</button>`);
     else {
       k.push(`<button class="knopf" onclick="A.abhaken('${a.id}')">Erledigt</button>`);
       if (a.art !== 'irgendwann' && !a.foto_pfad) k.push(`<button class="knopf still" onclick="A.mitFoto('${a.id}')">Mit Foto abhaken</button>`);
     }
-    if (a.art === 'tag' && !a.verschoben && a.faellig === heute()) k.push(`<button class="knopf still" onclick="A.morgen('${a.id}')">Auf morgen verschieben</button>`);
+    if (meine && a.art === 'tag' && !a.verschoben && a.faellig === heute()) k.push(`<button class="knopf still" onclick="A.morgen('${a.id}')">Auf morgen verschieben</button>`);
   }
-  if (a.status === 'wartet' && eltern() && !meine) {
+  if (pruefen) {
     if (a.art === 'frei') k.push(`<div class="zwei"><button class="knopf" onclick="A.bestaetige('${a.id}',1)">1 Punkt geben</button><button class="knopf still" onclick="A.bestaetige('${a.id}',2)">2 Punkte geben</button></div>`);
     else k.push(`<button class="knopf" onclick="A.bestaetige('${a.id}')">Bestätigen, +${PUNKTE[a.art]}</button>`);
-    k.push(`<button class="knopf still" onclick="A.zurueckgeben('${a.id}')">${a.art === 'frei' ? 'Nicht anerkennen' : 'Noch nicht in Ordnung'}</button>`);
+    k.push(`<button class="knopf still" onclick="A.zurueckAuf('${a.id}')">${a.art === 'frei' ? 'Nicht anerkennen' : 'Noch nicht in Ordnung'}</button>`);
   }
   if (eltern() || (a.von === S.ich && a.art === 'irgendwann')) {
     k.push(`<button class="knopf gefahr" onclick="A.loeschAufgabe('${a.id}')">Aufgabe löschen</button>`);
@@ -385,10 +418,12 @@ function bNeu(s) {
   const titel = { tag: 'Tagesaufgabe', woche: 'Aufgabe für die Woche', irgendwann: 'Aufgabe ohne Datum' }[s.art];
   return `<h3>${titel}</h3>
     <p class="klein-titel">Für wen?</p>
-    <div class="chips">${wer.map(m => `<button class="chip ${s.fuer === m.id ? 'an' : ''}" style="--c:${esc(m.farbe)}" onclick="A.neuFuer('${m.id}')">${tier(m, 'klein')}${esc(m.name)}</button>`).join('')}</div>
+    <div class="chips">${wer.map(m => `<button class="chip ${s.fuer === m.id ? 'an' : ''}" style="--c:${esc(m.farbe)}" onclick="A.neuFuer('${m.id}')">${tier(m, 'klein')}${esc(m.name)}</button>`).join('')}
+      ${eltern() && s.art !== 'irgendwann' ? `<button class="chip ${s.fuer === 'alle' ? 'an' : ''}" style="--c:${ALLE.farbe}" onclick="A.neuFuer('alle')">${tier(ALLE, 'klein')}Alle</button>` : ''}</div>
+    ${s.fuer === 'alle' ? `<p class="hinweis">Wer sie zuerst erledigt, bekommt ${PUNKTE[s.art] === 1 ? 'den Punkt' : `die ${PUNKTE[s.art]} Punkte`}. Bleibt sie liegen, verliert niemand etwas.</p>` : ''}
     <p class="klein-titel">Was ist zu tun?</p>
     ${sprechFeld(`<input class="feld voll hell" id="neu-t" value="${esc(s.t)}" oninput="A.entwurf('t', this.value)" onkeydown="if(event.key==='Enter')A.neuAufgabe()" placeholder="${S.hoert ? 'Ich höre zu …' : 'z. B. Flur wischen'}" maxlength="120" enterkeyhint="done" autocomplete="off">`, 'neu-t')}
-    ${s.art === 'tag' && s.vor.length ? `<p class="klein-titel">Oft für ${esc(P(s.fuer).name)}</p>
+    ${s.art === 'tag' && s.vor.length && s.fuer !== 'alle' ? `<p class="klein-titel">Oft für ${esc(P(s.fuer).name)}</p>
     <div class="chips">${s.vor.map(o => `<button class="chip nur" data-t="${esc(o)}" onclick="A.vorschlagNehmen(this.dataset.t)">${esc(o)}</button>`).join('')}</div>` : ''}
     ${s.art === 'tag' && !s.wdh ? `<p class="klein-titel">Wann?</p>${blattSchalter('wann', [['heute', 'Heute'], ['morgen', 'Morgen']])}` : ''}
     ${s.art === 'tag' && s.wdh ? `<p class="klein-titel">An welchen Tagen?</p>
@@ -405,8 +440,8 @@ function bNeu(s) {
 function bSerie(s) {
   const x = S.d.serien.find(v => v.id === s.id);
   if (!x) return `<h3>Diese Wiederholung gibt es nicht mehr</h3>`;
-  const m = P(x.fuer);
-  return `<div class="blatt-kopf">${tier(m)}<div><h3>${esc(x.titel)}</h3><p class="unter">${ART[x.art]} für ${esc(m.name)}</p></div></div>
+  const m = x.fuer ? P(x.fuer) : ALLE;
+  return `<div class="blatt-kopf">${tier(m)}<div><h3>${esc(x.titel)}</h3><p class="unter">${ART[x.art]} für ${x.fuer ? esc(m.name) : 'alle'}</p></div></div>
     <div class="liste eng"><div class="zeile"><span class="mitte titel">Wiederholt sich</span><span class="info">${gross(serieText(x))}</span></div>
     ${x.foto_pflicht ? `<div class="zeile"><span class="mitte titel">Foto als Beweis</span><span class="info">Wird verlangt</span></div>` : ''}
     ${x.von ? `<div class="zeile"><span class="mitte titel">Eingetragen von</span><span class="info">${esc(P(x.von).name)}</span></div>` : ''}</div>
@@ -461,7 +496,8 @@ function bEinst() {
   const arten = [['neu', 'Neue Aufgabe für dich'], ['bestaetigt', 'Deine Aufgabe wurde bestätigt'], ['verpasst', 'Aufgabe verpasst'],
     ...(eltern() ? [['erledigt', 'Jemand hat eine Aufgabe erledigt'], ['einkauf', 'Neuer Vorschlag für die Einkaufsliste']]
       : [['einkauf', 'Antwort auf deinen Einkaufsvorschlag']]),
-    ['erinnerung', 'Erinnerung an offene Aufgaben'], ['woche', 'Wochenabschluss'], ['joker', 'Joker'], ['termine', 'Termine'], ['merk', 'Dran denken']];
+    ['erinnerung', 'Erinnerung an offene Aufgaben'], ['woche', 'Wochenabschluss'], ['joker', 'Joker'], ['termine', 'Termine'], ['merk', 'Dran denken'], ['sparen', 'Sparschweine']];
+  const abend = Number((m.mitteilungen || {}).abend) || 18;
   return `<div class="blatt-kopf">${tier(m, 'gross')}<div><h3>${esc(m.name)}</h3><p class="unter">${eltern() ? 'Elternteil' : 'Kind'}</p></div></div>
     <p class="klein-titel">Dein Tier</p>${tierWahl(m.tier, !!m.bild_pfad, 'A.setzTier', 'A.setzFoto')}
     <p class="klein-titel">Deine Farbe</p>${farbWahl(m.farbe, vergeben, 'A.setzFarbe')}
@@ -470,6 +506,8 @@ function bEinst() {
       <span class="info">${{ an: 'Eingeschaltet', aus: 'Ausgeschaltet', gesperrt: 'In den iPhone-Einstellungen gesperrt', 'geht-nicht': 'Geht nur in der App auf dem Home-Bildschirm', unbekannt: 'Wird geprüft …' }[S.push]}</span></span>${kipp(S.push === 'an')}</button></div>
     <p class="klein-titel">Wobei möchtest du eine Nachricht?</p>
     <div class="liste">${arten.map(([k, l]) => `<button class="zeile" onclick="A.pushUm('${k}')"><span class="mitte titel">${l}</span>${kipp(an(k))}</button>`).join('')}</div>
+    <p class="klein-titel">Abend-Erinnerung an offene Aufgaben um</p>
+    <div class="chips">${[16, 17, 18, 19, 20].map(n => `<button class="chip nur ${abend === n ? 'an' : ''}" onclick="A.abendZeit(${n})">${n} Uhr</button>`).join('')}</div>
     <p class="klein-titel">Dieses Gerät</p>
     <div class="liste"><button class="zeile" onclick="A.merkenUm()"><span class="mitte titel">Code merken</span>${kipp(S.merken)}</button>
       <button class="zeile" onclick="A.codeAuf()"><span class="mitte titel">${eltern() ? 'Einen Code ändern' : 'Meinen Code ändern'}</span><span class="info">›</span></button></div>
@@ -543,9 +581,26 @@ function bVerlauf(s) {
       : `<div class="liste"><div class="leer">Wird geladen …</div></div>`}</div>`;
 }
 
+function bZurueck(s) {
+  const a = S.d.aufgaben.find(x => x.id === s.id);
+  if (!a || a.status !== 'wartet') return `<h3>Schon erledigt</h3>`;
+  const frei = a.art === 'frei';
+  const gruende = frei ? ['Das zählt nicht', 'War schon gemacht', 'Zu wenig'] : ['Nicht gründlich genug', 'Noch nicht fertig', 'Foto fehlt'];
+  return `<h3>${frei ? 'Warum nicht?' : 'Was fehlt noch?'}</h3><p class="unter">${esc(a.titel)}, ${esc(P(a.fuer).name)}</p>
+    <div class="chips abstand">${gruende.map(g => `<button class="chip nur" onclick="A.zurueckgeben('${a.id}','${g}')">${g}</button>`).join('')}</div>
+    <input class="feld voll hell abstand" value="${esc(s.grund)}" oninput="A.entwurf('grund', this.value)" onkeydown="if(event.key==='Enter')A.zurueckgeben('${a.id}')" placeholder="Oder kurz selbst schreiben" maxlength="120" autocomplete="off" enterkeyhint="done">
+    <div class="abstand"><button class="knopf" onclick="A.zurueckgeben('${a.id}')">${frei ? 'Nicht anerkennen' : 'Zurückgeben'}</button></div>`;
+}
+
+function bKaufBild(s) {
+  const k = S.d.einkauf.find(x => x.id === s.id);
+  return `<h3>${esc(k ? k.titel : 'Foto')}</h3>${k && k.von ? `<p class="unter">Von ${esc(P(k.von).name)}</p>` : ''}
+    ${s.url ? `<img class="beweis hoch" src="${esc(s.url)}" alt="Foto zum Einkauf">` : `<div class="beweis laedt">Foto wird geladen …</div>`}`;
+}
+
 const BLATT = {
   aufgabe: bAufgabe, neu: bNeu, frei: bFrei, joker: bJoker, schwein: bSchwein, neuschwein: bNeuSchwein, einst: bEinst,
-  code: bCode, termin: bTermin, merk: bMerk, nein: bNein, kauf: bKauf, verlauf: bVerlauf, serie: bSerie,
+  code: bCode, termin: bTermin, merk: bMerk, nein: bNein, kauf: bKauf, verlauf: bVerlauf, serie: bSerie, zurueck: bZurueck, kbild: bKaufBild,
 };
 
 const vBlatt = () => `<div class="schleier" onclick="if(event.target===this)A.zu()"><div class="blatt" role="dialog" aria-modal="true">

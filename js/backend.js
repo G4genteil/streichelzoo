@@ -11,7 +11,7 @@ function deutsch(e) {
   if (/farbe_form|tier_kurz|bild_form/.test(m)) return 'Dieser Wert passt nicht';
   if (/betrag_grenze/.test(m)) return 'Der Betrag ist zu groß';
   if (/Anonymous sign-ins are disabled/i.test(m)) return 'In Supabase sind anonyme Anmeldungen noch ausgeschaltet';
-  if (e?.code === 'PGRST202' || e?.code === '42883' || /einkauf_status_check/.test(m)) return 'Dafür fehlt noch ein Update in Supabase (Dateien 05 und 06)';
+  if (e?.code === 'PGRST202' || e?.code === 'PGRST204' || e?.code === '42883' || /einkauf_status_check/.test(m)) return 'Dafür fehlt noch ein Update in Supabase (Dateien 05 bis 07)';
   console.error('Supabase:', e);
   return 'Das hat nicht geklappt' + (m ? ` (${m.slice(0, 120)})` : '');
 }
@@ -102,8 +102,9 @@ export function supabaseBackend(sb, url) {
       p_foto_pflicht: !!a.foto_pflicht, p_erinnerung_tage: a.erinnerung_tage ?? 7,
       ...(a.foto ? { p_foto: a.foto } : {}) }),               // nur mitschicken, wenn es eins gibt (braucht 06_persoenlich.sql)
     aufgabeErledigen: (id, foto) => rpc('aufgabe_erledigen', { p_id: id, p_foto: foto ?? null }),
-    aufgabeBestaetigen: (id, punkte) => rpc('aufgabe_bestaetigen', { p_id: id, p_punkte: punkte ?? null }),
-    aufgabeZurueck: id => rpc('aufgabe_zurueckgeben', { p_id: id }),
+    // Lob und Grund nur mitschicken, wenn es sie gibt (brauchen 07_miteinander.sql).
+    aufgabeBestaetigen: (id, punkte, lob) => rpc('aufgabe_bestaetigen', { p_id: id, p_punkte: punkte ?? null, ...(lob ? { p_lob: lob } : {}) }),
+    aufgabeZurueck: (id, grund) => rpc('aufgabe_zurueckgeben', { p_id: id, ...(grund ? { p_grund: grund } : {}) }),
     aufgabeVerschieben: id => rpc('aufgabe_verschieben', { p_id: id }),
     aufgabeLoeschen: id => x(sb.from('aufgaben').delete().eq('id', id)),
     aufgabeWiederoeffnen: id => rpc('aufgabe_wiederoeffnen', { p_id: id }),
@@ -114,7 +115,8 @@ export function supabaseBackend(sb, url) {
     punkteVerlauf: id => x(sb.from('punkte').select('wert,grund,am,aufgaben(titel)').eq('mitglied_id', id).order('am', { ascending: false }).limit(30)),
 
     // ---------- Einkauf
-    einkaufNeu: k => x(sb.from('einkauf').insert({ titel: k.titel, menge: k.menge || '', status: k.status, von: k.von })),
+    einkaufNeu: k => x(sb.from('einkauf').insert({ titel: k.titel, menge: k.menge || '', status: k.status, von: k.von, ...(k.foto_pfad ? { foto_pfad: k.foto_pfad } : {}) })),
+    einkaufLos: () => rpc('einkauf_los'),
     einkaufSetzen: (id, werte) => x(sb.from('einkauf').update(werte).eq('id', id)),
     einkaufLoeschen: id => x(sb.from('einkauf').delete().eq('id', id)),
     einkaufHaeufig: async () => (await rpc('einkauf_haeufig')).map(v => v.titel),

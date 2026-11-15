@@ -315,6 +315,29 @@ html[data-zug=rein]::view-transition-new(seite){animation-name:rein-klein;animat
 .mikro.an{background:var(--wiese);color:var(--auf-wiese);animation:hoeren 1.3s ease-in-out infinite}
 @keyframes hoeren{50%{box-shadow:0 0 0 9px color-mix(in srgb,var(--wiese) 20%,transparent)}}
 
+.eingabe .sprech{flex:1;min-width:0}
+.eingabe .sprech .feld{width:100%}
+.mikro.dabei{background:var(--wiese);color:var(--auf-wiese)}
+.text-link{color:var(--wiese);font-weight:600;font-size:13px;padding:2px 0}
+.beweis.hoch{max-height:60vh;object-fit:contain;background:var(--feld)}
+
+/* ---------- Im Laden: große Zeilen ---------- */
+.zeile.laden{min-height:70px;padding:16px 14px}
+.zeile.laden .titel{font-size:19px;font-weight:600}
+.zeile.laden > .info{font-size:16px}
+
+/* ---------- Fleiß-Serie und Sparziel ---------- */
+.flamme{width:11px;height:13px;fill:#E8663D;vertical-align:-2px;margin-right:2px}
+.marke.heiss{color:var(--warn);font-weight:700;border-color:color-mix(in srgb,#E8663D 45%,var(--linie))}
+.serie-zeile{font-size:14px;font-weight:600;color:var(--warn);margin-top:6px}
+.serie-zeile .flamme{width:13px;height:15px;margin-right:4px}
+.schwein .nase{display:inline-block;align-self:flex-start;transform-origin:50% 80%}
+.schwein.voll{box-shadow:inset 0 0 0 2px #F5B841}
+.schwein.voll .von{color:var(--tinte);font-weight:600}
+.schwein.voll .balken i{background:#F5B841}
+.schwein.huepft .nase{animation:huepfen .9s cubic-bezier(.3,1.5,.4,1)}
+@keyframes huepfen{30%{transform:translateY(-14px) rotate(-12deg) scale(1.3)}62%{transform:translateY(0) rotate(7deg) scale(.96)}}
+
 /* ---------- Wochenabschluss ----------
    Ein Wettlauf der Säulen, dann Krone, Karte und Konfetti. Der Grundzustand jedes Teils ist sein Endzustand:
    Jede Animation läuft nur "von irgendwo" dorthin. So stimmt das Bild auch ohne Bewegung und nach dem Überspringen. */

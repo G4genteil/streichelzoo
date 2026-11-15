@@ -29,6 +29,8 @@ export const S = {
   frisch: null,            // { id, bis }: gerade abgehakt, für die Haken-Animation
   frischTab: 0,
   push: 'unbekannt',       // an | aus | gesperrt | geht-nicht (auf diesem Gerät)
+  imLaden: false,          // Einkaufsliste in der großen Ansicht für den Laden
+  kaufBild: null,          // Foto, das am nächsten Einkaufs-Eintrag hängen soll
   hoert: false,            // läuft gerade die Spracheingabe?
   kaufOft: [],             // was die Familie oft kauft, für die Vorschläge beim Tippen
   feier: null,             // der Wochenabschluss, solange er zu sehen ist: { woche, reihen, fertig }

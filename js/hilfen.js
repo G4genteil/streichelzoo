@@ -63,6 +63,11 @@ export const WOCHENTAGE = [[1, 'Mo'], [2, 'Di'], [3, 'Mi'], [4, 'Do'], [5, 'Fr']
 
 export const HAKEN = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3.2 3.2L13 4.8"/></svg>';
 
+export const LOB = ['Super gemacht', 'Danke dir', 'Richtig gründlich', 'Stark'];       // feste Sätze beim Bestätigen
+// Der Platzhalter für „alle", wenn eine Aufgabe noch niemandem gehört.
+export const ALLE = { id: null, name: 'Alle', farbe: '#2B7556', tier: '🙌', bild_pfad: null };
+export const KAMERA = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13.2" r="3.4"/></svg>';
+export const FLAMME = '<svg class="flamme" viewBox="0 0 16 16" aria-hidden="true"><path d="M8.2 1.2c.3 2.3 3.6 3.8 3.6 7.300A3.800 3.800 0 0 1 8 12.3a3.800 3.800 0 0 1-3.800-3.800c0-1.400.6-2.400 1.400-3.100.2 1.100.8 1.700 1.400 1.800-.4-2.600.1-4.600 1.200-6z" transform="translate(0 1.6)"/></svg>';
 export const MIKRO = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/></svg>';
 
 export const ICON = {
