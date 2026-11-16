@@ -321,6 +321,13 @@ html[data-zug=rein]::view-transition-new(seite){animation-name:rein-klein;animat
 .text-link{color:var(--wiese);font-weight:600;font-size:13px;padding:2px 0}
 .beweis.hoch{max-height:60vh;object-fit:contain;background:var(--feld)}
 
+.zeile .info.notiz{color:color-mix(in srgb,var(--tinte) 78%,var(--leise));overflow-wrap:anywhere}
+.zeile .info.notiz::before{content:"";display:inline-block;width:3px;height:10px;border-radius:2px;background:var(--wiese);margin-right:6px;vertical-align:-1px}
+.pokal{width:12px;height:13px;fill:#E0A21A;vertical-align:-2px;margin-right:2px}
+.pokal .henkel{fill:none;stroke:#E0A21A;stroke-width:1.2;stroke-linecap:round}
+.marke.gold{font-weight:700;color:color-mix(in srgb,#B37F00 70%,var(--tinte));border-color:color-mix(in srgb,#E0A21A 50%,var(--linie))}
+.banner.ruhig{background:color-mix(in srgb,var(--wiese) 12%,var(--karte));color:var(--tinte);font-weight:500}
+
 /* ---------- Im Laden: große Zeilen ---------- */
 .zeile.laden{min-height:70px;padding:16px 14px}
 .zeile.laden .titel{font-size:19px;font-weight:600}

@@ -11,7 +11,7 @@ function deutsch(e) {
   if (/farbe_form|tier_kurz|bild_form/.test(m)) return 'Dieser Wert passt nicht';
   if (/betrag_grenze/.test(m)) return 'Der Betrag ist zu groß';
   if (/Anonymous sign-ins are disabled/i.test(m)) return 'In Supabase sind anonyme Anmeldungen noch ausgeschaltet';
-  if (e?.code === 'PGRST202' || e?.code === 'PGRST204' || e?.code === '42883' || /einkauf_status_check/.test(m)) return 'Dafür fehlt noch ein Update in Supabase (Dateien 05 bis 08)';
+  if (e?.code === 'PGRST202' || e?.code === 'PGRST204' || e?.code === '42883' || /einkauf_status_check/.test(m)) return 'Dafür fehlt noch ein Update in Supabase (Dateien 05 bis 09)';
   console.error('Supabase:', e);
   return 'Das hat nicht geklappt' + (m ? ` (${m.slice(0, 120)})` : '');
 }
@@ -22,6 +22,7 @@ export function supabaseBackend(sb, url) {
     if (error) {
       const f = new Error(deutsch(error));
       f.status = status; f.code = error.code;
+      f.offline = f.message === 'Keine Verbindung zum Internet';   // dann darf die Einkaufsliste den Haken merken
       throw f;
     }
     return data;
@@ -101,7 +102,11 @@ export function supabaseBackend(sb, url) {
       p_titel: a.titel, p_art: a.art, p_fuer: a.fuer, p_faellig: a.faellig ?? null,
       p_foto_pflicht: !!a.foto_pflicht, p_erinnerung_tage: a.erinnerung_tage ?? 7,
       ...(a.foto ? { p_foto: a.foto } : {}),                  // nur mitschicken, wenn es eins gibt (braucht 06_persoenlich.sql)
-      ...(a.mit && a.mit.length ? { p_mit: a.mit } : {}), ...(a.ohne_punkte ? { p_ohne_punkte: true } : {}) }),   // brauchen 08_gemeinsam.sql
+      ...(a.mit && a.mit.length ? { p_mit: a.mit } : {}), ...(a.ohne_punkte ? { p_ohne_punkte: true } : {}),      // brauchen 08_gemeinsam.sql
+      ...(a.notiz ? { p_notiz: a.notiz } : {}) }),                                                               // braucht 09_feinschliff.sql
+    // Leere Angaben bleiben, wie sie sind. Die Notiz wird immer mitgeschickt: leer heißt „keine Notiz".
+    aufgabeAendern: (id, n) => rpc('aufgabe_aendern', { p_id: id, p_titel: n.titel, p_notiz: n.notiz ?? '', p_fuer: n.fuer ?? null,
+      p_faellig: n.faellig ?? null, p_foto_pflicht: n.foto_pflicht ?? null, p_ohne_punkte: n.ohne_punkte ?? null }),
     aufgabeErledigen: (id, foto) => rpc('aufgabe_erledigen', { p_id: id, p_foto: foto ?? null }),
     // Lob und Grund nur mitschicken, wenn es sie gibt (brauchen 07_miteinander.sql).
     aufgabeBestaetigen: (id, punkte, lob) => rpc('aufgabe_bestaetigen', { p_id: id, p_punkte: punkte ?? null, ...(lob ? { p_lob: lob } : {}) }),
@@ -112,7 +117,9 @@ export function supabaseBackend(sb, url) {
     aufgabeWiederoeffnen: id => rpc('aufgabe_wiederoeffnen', { p_id: id }),
     alleBestaetigen: () => rpc('alle_bestaetigen'),
     serieAnlegen: s => rpc('serie_anlegen', { p_titel: s.titel, p_art: s.art, p_fuer: s.fuer, p_tage: s.tage ?? null, p_foto_pflicht: !!s.foto_pflicht,
-      ...(s.mit && s.mit.length ? { p_mit: s.mit } : {}), ...(s.ohne_punkte ? { p_ohne_punkte: true } : {}) }),
+      ...(s.mit && s.mit.length ? { p_mit: s.mit } : {}), ...(s.ohne_punkte ? { p_ohne_punkte: true } : {}), ...(s.notiz ? { p_notiz: s.notiz } : {}) }),
+    serieAendern: (id, n) => rpc('serie_aendern', { p_id: id, p_titel: n.titel, p_notiz: n.notiz ?? '', p_tage: n.tage ?? null,
+      p_foto_pflicht: n.foto_pflicht ?? null, p_ohne_punkte: n.ohne_punkte ?? null, p_fuer: n.fuer ?? null }),
     serieLoeschen: id => x(sb.from('serien').delete().eq('id', id)),
     jokerEinloesen: () => rpc('joker_einloesen'),
     punkteVerlauf: id => x(sb.from('punkte').select('wert,grund,am,aufgaben(titel)').eq('mitglied_id', id).order('am', { ascending: false }).limit(30)),

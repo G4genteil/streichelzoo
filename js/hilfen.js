@@ -72,6 +72,7 @@ export const LOB = ['Super gemacht', 'Danke dir', 'Richtig gründlich', 'Stark']
 export const ALLE = { id: null, name: 'Alle', farbe: '#2B7556', tier: '🙌', bild_pfad: null };
 export const KAMERA = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13.2" r="3.4"/></svg>';
 export const FLAMME = '<svg class="flamme" viewBox="0 0 16 16" aria-hidden="true"><path d="M8.2 1.2c.3 2.3 3.6 3.8 3.6 7.300A3.800 3.800 0 0 1 8 12.3a3.800 3.800 0 0 1-3.800-3.800c0-1.400.6-2.400 1.400-3.100.2 1.100.8 1.700 1.400 1.800-.4-2.600.1-4.600 1.200-6z" transform="translate(0 1.6)"/></svg>';
+export const POKAL = '<svg class="pokal" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2h8v3.5a4 4 0 0 1-8 0zM7.3 9.3h1.4v2.2h2.1v2H5.200v-2h2.100z"/><path class="henkel" d="M4 3.200H2v.9a2.500 2.500 0 0 0 2.300 2.500M12 3.200h2v.9a2.500 2.500 0 0 1-2.300 2.500"/></svg>';
 export const MIKRO = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/></svg>';
 
 export const ICON = {

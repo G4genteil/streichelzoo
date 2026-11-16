@@ -42,6 +42,7 @@ async function laden() {
     if (!wer) return raus('Bitte melde dich noch einmal an');   // z. B. hat ein Elternteil den Code neu gesetzt
   }
   for (const w of wartend.values()) d[w.liste] = d[w.liste].filter(x => !w.ids.includes(x.id));   // was gerade gelöscht wird, bleibt weg
+  hakenAuflegen(d);                                  // was ohne Netz abgehakt wurde, bleibt abgehakt
   const roh = JSON.stringify(d), hatteFehler = !!S.ladeFehler;
   S.ladeFehler = '';
   if (roh !== S.roh || hatteFehler) {
@@ -121,17 +122,21 @@ const aufgabe = id => S.d.aufgaben.find(a => a.id === id);
 export async function starte(backend, vapid) {
   B = backend; VAPID = vapid;
   S.merken = lager.lies('zoo_merken') !== '0';
+  spaeterLesen();
   const stand = liesStand();
   if (stand && stand.ich && S.merken && !B.demo) {       // sofort den letzten Stand zeigen, dann auffrischen
     S.ich = stand.ich; S.d = { ...leer(), ...stand.d }; S.profile = S.d.mitglieder; S.phase = 'app'; S.start = false;
+    hakenAuflegen(S.d);
   }
+  S.wartetAufNetz = spaeter.length;
   zeichne();
   await verbinde();
 
   document.addEventListener('visibilitychange', () => { if (document.hidden) jetztLoeschen(); else auffrischen(); });
   window.addEventListener('pagehide', jetztLoeschen);
-  window.addEventListener('online', auffrischen);
+  window.addEventListener('online', () => { auffrischen(); nachsenden(); });
   setInterval(() => { if (!document.hidden) auffrischen(); }, 60000);
+  setInterval(nachsenden, 10000);                       // gemerkte Haken der Einkaufsliste nachreichen
 }
 
 async function verbinde() {
@@ -151,7 +156,7 @@ async function verbinde() {
 
 function auffrischen() {
   if (!gestartet) { if (S.phase !== 'laden') verbinde(); return; }
-  if (S.phase === 'app') { zeichne(); if (S.imLaden) wachBleiben(true); if (Date.now() - zuletzt > 4000) laden(); else feierPruefen(); }
+  if (S.phase === 'app') { nachsenden(); zeichne(); if (S.imLaden) wachBleiben(true); if (Date.now() - zuletzt > 4000) laden(); else feierPruefen(); }
   else if (S.phase === 'tor') B.profile().then(p => { S.profile = p; if (S.phase === 'tor') render(); }).catch(() => {});
 }
 
@@ -169,6 +174,7 @@ function nachDraussen() {
   bereit = false;
   if (S.feier) clearTimeout(S.feier.uhr);
   S.ich = null; S.d = leer(); S.roh = ''; S.sheet = null; S.feier = null; S.kaufOft = []; S.kaufBild = null; S.phase = 'tor';
+  spaeter = []; spaeterMerken();
   if (S.imLaden) { S.imLaden = false; wachBleiben(false); }
   symbol();
   lager.weg('zoo_stand');
@@ -458,7 +464,7 @@ A.neuAuf = () => {
   const art = S.seg, kinder = S.d.mitglieder.filter(m => m.rolle === 'kind');
   const fuer = art === 'irgendwann' ? S.ich : (kinder.find(m => m.id !== S.ich) || kinder[0] || ich()).id;
   S.sheet = { k: 'neu', art, fuer, t: '', wann: 'heute', foto: false, tage: 7, vor: [], wdh: false, wtage: [1, 2, 3, 4, 5, 6, 7],
-    zus: false, wer: [], ohne: false };              // zus: mehrere erledigen sie zusammen (wer = die Beteiligten)
+    zus: false, wer: [], ohne: false, notiz: '' };   // zus: mehrere erledigen sie zusammen (wer = die Beteiligten)
   render();
   ladeVorschlaege();
 };
@@ -506,16 +512,64 @@ A.neuAufgabe = () => {
     if (dabei.length < 2) return melde('Tippe mindestens zwei an, die mitmachen');
     fuer = dabei[0]; mit = dabei.slice(1);
   }
-  const ohne_punkte = s.art !== 'irgendwann' && !!s.ohne;
+  const ohne_punkte = s.art !== 'irgendwann' && !!s.ohne, notiz = (s.notiz || '').trim();
   if (s.art !== 'irgendwann' && s.wdh) {
     if (s.art === 'tag' && !s.wtage.length) return melde('Wähle mindestens einen Wochentag');
-    return tun(() => B.serieAnlegen({ titel, art: s.art, fuer, mit, ohne_punkte, tage: s.art === 'tag' ? [...s.wtage].sort((a, b) => a - b) : null, foto_pflicht: s.foto }),
+    return tun(() => B.serieAnlegen({ titel, art: s.art, fuer, mit, ohne_punkte, notiz, tage: s.art === 'tag' ? [...s.wtage].sort((a, b) => a - b) : null, foto_pflicht: s.foto }),
       { zu: true, ok: 'Trägt sich ab jetzt von selbst ein' });
   }
   const faellig = s.art === 'tag' ? (s.wann === 'morgen' ? plus(heute(), 1) : heute()) : null;
-  return tun(() => B.aufgabeAnlegen({ titel, art: s.art, fuer, mit, ohne_punkte, faellig, foto_pflicht: s.art !== 'irgendwann' && s.foto, erinnerung_tage: s.tage }),
+  return tun(() => B.aufgabeAnlegen({ titel, art: s.art, fuer, mit, ohne_punkte, notiz, faellig, foto_pflicht: s.art !== 'irgendwann' && s.foto, erinnerung_tage: s.tage }),
     { zu: true, ok: mit.length ? `Für ${aufzaehlen([fuer, ...mit].map(id => id === S.ich ? 'dich' : P(id).name))} eingetragen`
       : !fuer ? 'Für alle eingetragen' : fuer === S.ich ? 'Eingetragen' : `Aufgabe für ${P(fuer).name} eingetragen` });
+};
+
+// ---------- Ändern statt löschen und neu anlegen
+export const darfAendern = a => a.status === 'offen' && a.art !== 'frei' && (eltern() || (a.von === S.ich && a.art === 'irgendwann'));
+A.aendernAuf = id => {
+  const a = aufgabe(id);
+  if (!a || !darfAendern(a)) return;
+  const h = heute();
+  return geh({ sheet: { k: 'aendern', id, t: a.titel, notiz: a.notiz || '', fuer: a.fuer,
+    wann: a.faellig === h ? 'heute' : a.faellig === plus(h, 1) ? 'morgen' : '', foto: !!a.foto_pflicht, ohne: !!a.ohne_punkte } });
+};
+A.aendern = () => {
+  const s = S.sheet, a = s && aufgabe(s.id);
+  if (!a) return A.zu();
+  const titel = (s.t || '').trim(), notiz = (s.notiz || '').trim(), h = heute();
+  if (!titel) return melde('Schreib kurz, was zu tun ist');
+  const tag = a.art === 'tag' && s.wann ? (s.wann === 'morgen' ? plus(h, 1) : h) : null, mitSchaltern = a.art !== 'irgendwann';
+  const neu = { titel, notiz, fuer: s.fuer && s.fuer !== a.fuer ? s.fuer : null, faellig: tag && tag !== a.faellig ? tag : null,
+    foto_pflicht: mitSchaltern ? !!s.foto : null, ohne_punkte: mitSchaltern ? !!s.ohne : null };
+  return tun(() => B.aufgabeAendern(a.id, neu), {
+    zu: true, ok: 'Geändert',
+    lokal: () => {
+      for (const x of runde(a).filter(x => x.status === 'offen')) {
+        x.titel = titel; x.notiz = notiz || null;
+        if (neu.faellig) x.faellig = neu.faellig;
+        if (mitSchaltern) { x.foto_pflicht = neu.foto_pflicht; x.ohne_punkte = neu.ohne_punkte; }
+      }
+      if (neu.fuer) a.fuer = neu.fuer;
+    },
+  });
+};
+A.serieAendernAuf = id => {
+  const x = S.d.serien.find(v => v.id === id);
+  if (!x || !eltern()) return;
+  return geh({ sheet: { k: 'saendern', id, t: x.titel, notiz: x.notiz || '', fuer: x.fuer, wtage: [...(x.tage || [])], foto: !!x.foto_pflicht, ohne: !!x.ohne_punkte } });
+};
+A.serieAendern = () => {
+  const s = S.sheet, x = s && S.d.serien.find(v => v.id === s.id);
+  if (!x) return A.zu();
+  const titel = (s.t || '').trim(), notiz = (s.notiz || '').trim();
+  if (!titel) return melde('Schreib kurz, was zu tun ist');
+  if (x.art === 'tag' && !s.wtage.length) return melde('Wähle mindestens einen Wochentag');
+  const neu = { titel, notiz, tage: x.art === 'tag' ? [...s.wtage].sort((a, b) => a - b) : null, foto_pflicht: !!s.foto, ohne_punkte: !!s.ohne,
+    fuer: s.fuer && s.fuer !== x.fuer ? s.fuer : null };
+  return tun(() => B.serieAendern(x.id, neu), {
+    zu: true, ok: 'Geändert',
+    lokal: () => { Object.assign(x, { titel, notiz: notiz || null, foto_pflicht: neu.foto_pflicht, ohne_punkte: neu.ohne_punkte }); if (neu.tage) x.tage = neu.tage; if (neu.fuer) x.fuer = neu.fuer; },
+  });
 };
 
 A.serieAuf = id => geh({ sheet: { k: 'serie', id } });
@@ -609,6 +663,50 @@ A.verlaufAuf = id => {
 
 const kauf = id => S.d.einkauf.find(k => k.id === id);
 
+// ---------- Einkaufen ohne Netz
+// Im Laden ist der Empfang oft schlecht. Ein Haken in der Einkaufsliste wird deshalb zuerst auf dem Gerät gemerkt
+// und dann übertragen. Klappt das nicht, bleibt er gemerkt und geht raus, sobald wieder Netz da ist.
+let spaeter = [];                  // [{ id, status }] in der Reihenfolge des Antippens
+let sendet = false, netzGesagt = false;
+function spaeterLesen() {          // beim Start: was beim letzten Mal nicht mehr rausging (in der Demo bleibt nichts liegen)
+  try { spaeter = (!B.demo && JSON.parse(lager.lies('zoo_spaeter'))) || []; } catch { spaeter = []; }
+  if (!Array.isArray(spaeter)) spaeter = [];
+}
+function spaeterMerken() { if (!B.demo) lager.setz('zoo_spaeter', JSON.stringify(spaeter)); S.wartetAufNetz = spaeter.length; }
+function hakenAuflegen(d) {
+  for (const e of spaeter) { const k = d.einkauf.find(x => x.id === e.id); if (k) k.status = e.status; }
+}
+const ohneNetz = () => Object.assign(new Error('Keine Verbindung zum Internet'), { offline: true });
+
+async function nachsenden() {
+  if (sendet || !spaeter.length || S.phase !== 'app') return;
+  sendet = true;
+  let wartet = false;
+  try {
+    while (spaeter.length && !wartet) {
+      const e = spaeter[0];
+      try {
+        // Bei schwachem Empfang hängt eine Anfrage lange: nach 8 Sekunden gilt sie als nicht angekommen.
+        await Promise.race([B.einkaufSetzen(e.id, { status: e.status }), new Promise((_, nein) => setTimeout(() => nein(ohneNetz()), 8000))]);
+      } catch (f) {
+        if (f.offline) { wartet = true; continue; }
+        melde(f.message || 'Das hat nicht geklappt');         // z. B. inzwischen gelöscht: nicht ewig wiederholen
+      }
+      const i = spaeter.indexOf(e);                           // wurde derselbe Artikel inzwischen neu angetippt, bleibt der neue Eintrag
+      if (i >= 0) spaeter.splice(i, 1);
+      spaeterMerken();
+    }
+  } finally { sendet = false; }
+  if (wartet) {
+    if (!netzGesagt) { netzGesagt = true; melde('Kein Netz. Deine Haken sind gemerkt.'); }
+    if (S.phase === 'app' && S.tab === 'einkauf') zeichne();
+    return;
+  }
+  if (netzGesagt) { netzGesagt = false; melde('Alles übertragen'); }
+  S.roh = '';
+  laden();
+}
+
 function ladeOft() {
   B.einkaufHaeufig().then(l => { S.kaufOft = l; if (S.phase === 'app' && S.tab === 'einkauf') zeichne(); }).catch(() => {});
 }
@@ -685,7 +783,15 @@ A.kaufUm = id => {
   if (!k) return;
   if (!eltern()) return melde('Abhaken können nur Eltern');
   const neu = k.status === 'gekauft' ? 'liste' : 'gekauft';
-  return tun(() => B.einkaufSetzen(id, { status: neu }), { lokal: () => { k.status = neu; if (neu === 'gekauft') { eben(id); klang('haken'); } } });
+  k.status = neu;
+  if (neu === 'gekauft') { eben(id); klang('haken'); }
+  spaeter = spaeter.filter(e => e.id !== id);            // nur der letzte Stand eines Artikels zählt
+  spaeter.push({ id, status: neu });
+  spaeterMerken();
+  S.roh = '';
+  merkeStand();
+  render();
+  return nachsenden();
 };
 A.kaufAuf = id => { const k = kauf(id); if (k && eltern()) return geh({ sheet: { k: 'kauf', id, menge: k.menge || '' } }); };
 A.kaufMenge = () => {

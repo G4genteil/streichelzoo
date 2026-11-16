@@ -33,6 +33,7 @@ export const S = {
   kaufBild: null,          // Foto, das am nächsten Einkaufs-Eintrag hängen soll
   hoert: false,            // läuft gerade die Spracheingabe?
   kaufOft: [],             // was die Familie oft kauft, für die Vorschläge beim Tippen
+  wartetAufNetz: 0,        // so viele Haken der Einkaufsliste sind gemerkt und noch nicht übertragen
   feier: null,             // der Wochenabschluss, solange er zu sehen ist: { woche, reihen, fertig }
 };
 

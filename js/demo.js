@@ -22,7 +22,7 @@ export function demoBackend() {
     id: neuId(), titel, art, fuer, von: 'm1', status, verschoben: false, foto_pflicht: false, foto_pfad: null, erinnerung_tage: 7,
     faellig: art === 'tag' || art === 'frei' ? h : art === 'woche' ? wocheEnde() : null,
     erledigt_am: status === 'offen' ? null : jetzt(), bestaetigt_von: null, created_at: jetzt(),
-    ohne_punkte: false, gruppe: null, erledigt_von: null, ...mehr });
+    ohne_punkte: false, gruppe: null, erledigt_von: null, notiz: null, ...mehr });
   let AUF = [
     aufgabe('Spülmaschine ausräumen', 'tag', 'm4'), aufgabe('Müll rausbringen', 'tag', 'm4', 'wartet'),
     aufgabe('Zimmer saugen', 'tag', 'm3', 'offen', { foto_pflicht: true }), aufgabe('Wäsche aufhängen', 'tag', 'm3', 'wartet'),
@@ -34,9 +34,13 @@ export function demoBackend() {
     aufgabe('Müll rausbringen', 'tag', null, 'offen', { fuer_alle: true }),
     aufgabe('Garage aufräumen', 'tag', 'm2', 'offen', { gruppe: 'g1' }), aufgabe('Garage aufräumen', 'tag', 'm4', 'offen', { gruppe: 'g1' }),
     aufgabe('Bett machen', 'tag', 'm4', 'offen', { ohne_punkte: true }),
+    aufgabe('Bad putzen', 'tag', 'm3', 'offen', { notiz: 'Auch den Spiegel. Putzmittel steht unter dem Waschbecken.' }),
     aufgabe('Wäsche zusammenlegen', 'tag', 'm1', 'wartet', { erledigt_von: 'm1', von: 'm2' }),
   ];
   const SERIE = { m1: 4, m2: 0, m3: 12, m4: 6 };          // Tage in Folge alles erledigt
+  const SIEGE = { m1: 1, m2: 0, m3: 4, m4: 2 };           // so oft die Woche gewonnen
+  // Zum Ausprobieren von „Einkaufen ohne Netz": in der Konsole zooOhneNetz = true setzen, später wieder false.
+  const netz = () => { if (globalThis.zooOhneNetz) throw Object.assign(new Error('Keine Verbindung zum Internet'), { offline: true }); };
   let SERIEN = [
     { id: 'r1', titel: 'Spülmaschine ausräumen', art: 'tag', fuer: 'm4', von: 'm1', tage: [1, 2, 3, 4, 5, 6, 7], foto_pflicht: false },
     { id: 'r2', titel: 'Zimmer saugen', art: 'tag', fuer: 'm3', von: 'm1', tage: [3, 6], foto_pflicht: true },
@@ -131,7 +135,8 @@ export function demoBackend() {
 
     async laden() {
       await warte();
-      const best = M.map(m => ({ mitglied_id: m.id, joker: JOKER[m.id] || 0, serie: SERIE[m.id] || 0,
+      netz();
+      const best = M.map(m => ({ mitglied_id: m.id, joker: JOKER[m.id] || 0, serie: SERIE[m.id] || 0, siege: SIEGE[m.id] || 0,
         woche: PKT.filter(p => p.mitglied_id === m.id && p.woche).reduce((n, p) => n + p.wert, 0),
         gesamt: PKT.filter(p => p.mitglied_id === m.id).reduce((n, p) => n + p.wert, 0) }));
       return kopie({ mitglieder: M, aufgaben: AUF, best, jokerHeute: JOKER_HEUTE, einkauf: KAUF, termine: TERM, merk: MERK,
@@ -152,9 +157,10 @@ export function demoBackend() {
       const tag = a.art === 'tag' ? (a.faellig || h) : a.art === 'woche' ? wocheEnde() : a.art === 'frei' ? h : null;
       if (a.art === 'tag' && tag === h && dabei.some(id => JOKER_HEUTE.includes(id))) nein('An diesem Tag ist ein Joker eingelöst');
       const ohne = !!a.ohne_punkte && (a.art === 'tag' || a.art === 'woche'), gruppe = dabei.length > 1 ? neuId() : null;
+      const notiz = (a.notiz || '').trim().slice(0, 200) || null;
       const wann = a.art === 'irgendwann' ? 'Ohne Datum' : a.art === 'woche' ? 'Bis Sonntag, 18 Uhr' : tag === h ? 'Für heute' : 'Für morgen';
       if (!a.fuer) {
-        const neu = aufgabe(a.titel, a.art, null, 'offen', { von: ichId, fuer_alle: true, faellig: tag, foto_pflicht: !!a.foto_pflicht, ohne_punkte: ohne });
+        const neu = aufgabe(a.titel, a.art, null, 'offen', { von: ichId, fuer_alle: true, faellig: tag, foto_pflicht: !!a.foto_pflicht, ohne_punkte: ohne, notiz });
         AUF.push(neu);
         M.filter(m => m.id !== ichId).forEach(m => an(m.id, 'neu', `${name(ichId)} hat eine Aufgabe für alle: ${a.titel}`,
           ohne ? 'Wer zuerst kommt, erledigt sie. Punkte gibt es dafür keine.' : 'Wer sie zuerst erledigt, bekommt den Punkt.', 'aufgabe:' + neu.id));
@@ -162,7 +168,7 @@ export function demoBackend() {
       }
       for (const p of dabei) {
         const neu = aufgabe(a.titel, a.art, p, a.art === 'frei' ? 'wartet' : 'offen', { von: ichId, faellig: tag, foto_pflicht: !!a.foto_pflicht,
-          foto_pfad: a.foto || null, erinnerung_tage: a.erinnerung_tage || 7, ohne_punkte: ohne, gruppe });
+          foto_pfad: a.foto || null, erinnerung_tage: a.erinnerung_tage || 7, ohne_punkte: ohne, gruppe, notiz });
         AUF.push(neu);
         if (a.art === 'frei') anEltern(ichId, 'erledigt', `${name(ichId)} hat freiwillig etwas erledigt`, a.titel + (a.foto ? ' (mit Foto)' : ''), 'aufgabe:' + neu.id);
         else if (p !== ichId) an(p, 'neu', `${name(ichId)} hat eine Aufgabe für ${gruppe ? 'euch' : 'dich'}: ${a.titel}`,
@@ -221,13 +227,46 @@ export function demoBackend() {
       const tage = s.tage && s.tage.length ? s.tage : [1, 2, 3, 4, 5, 6, 7], wt = new Date().getDay() || 7;
       if (s.art === 'tag' && s.tage && !s.tage.length) nein('Wähle mindestens einen Wochentag');
       const mit = s.fuer ? (s.mit || []).filter(id => id !== s.fuer) : [];
-      const serie = { id: neuId(), titel: s.titel, art: s.art, fuer: s.fuer, von: ichId, tage, foto_pflicht: !!s.foto_pflicht, mit, ohne_punkte: !!s.ohne_punkte };
+      const serie = { id: neuId(), titel: s.titel, art: s.art, fuer: s.fuer, von: ichId, tage, foto_pflicht: !!s.foto_pflicht, mit, ohne_punkte: !!s.ohne_punkte, notiz: (s.notiz || '').trim() || null };
       SERIEN.push(serie);
       if (s.art === 'tag' && !tage.includes(wt)) return;
-      const mehr = { von: ichId, foto_pflicht: !!s.foto_pflicht, serie_id: serie.id, ohne_punkte: !!s.ohne_punkte };
+      const mehr = { von: ichId, foto_pflicht: !!s.foto_pflicht, serie_id: serie.id, ohne_punkte: !!s.ohne_punkte, notiz: serie.notiz };
       if (!s.fuer) return void AUF.push(aufgabe(s.titel, s.art, null, 'offen', { ...mehr, fuer_alle: true }));
       const dabei = [s.fuer, ...mit].filter(id => s.art === 'woche' || !JOKER_HEUTE.includes(id)), gruppe = dabei.length > 1 ? neuId() : null;
       dabei.forEach(p => AUF.push(aufgabe(s.titel, s.art, p, 'offen', { ...mehr, gruppe })));
+    },
+    async aufgabeAendern(id, n) {
+      await warte();
+      const a = finde(id);
+      if (!(eltern() || (a.von === ichId && a.art === 'irgendwann'))) nein('Das darfst du nicht ändern');
+      if (a.art === 'frei' || a.status !== 'offen') nein('Das lässt sich nicht mehr ändern');
+      if (n.faellig && a.art !== 'tag') nein('Nur Tagesaufgaben haben einen Tag');
+      if (n.fuer && n.fuer !== a.fuer && (a.gruppe || !a.fuer)) nein('Hier lässt sich die Person nicht ändern');
+      const tag = n.faellig || a.faellig, fuer = n.fuer || a.fuer;
+      if (a.art === 'tag' && tag === h && (tag !== a.faellig || fuer !== a.fuer) && runde(a).some(x => JOKER_HEUTE.includes(x.id === a.id ? fuer : x.fuer))) nein('An diesem Tag ist ein Joker eingelöst');
+      for (const x of runde(a).filter(x => x.status === 'offen')) {
+        x.titel = (n.titel || '').trim() || x.titel; x.faellig = tag;
+        if (n.notiz != null) x.notiz = n.notiz.trim().slice(0, 200) || null;
+        if (x.art !== 'irgendwann') { if (n.foto_pflicht != null) x.foto_pflicht = n.foto_pflicht; if (n.ohne_punkte != null) x.ohne_punkte = n.ohne_punkte; }
+      }
+      if (fuer !== a.fuer) {
+        a.fuer = fuer;
+        if (fuer !== ichId) an(fuer, 'neu', `${name(ichId)} hat eine Aufgabe für dich: ${a.titel}`, a.art === 'irgendwann' ? 'Ohne Datum' : a.art === 'woche' ? 'Bis Sonntag, 18 Uhr' : tag === h ? 'Für heute' : 'Für morgen', 'aufgabe:' + a.id);
+      }
+    },
+    async serieAendern(id, n) {
+      await warte();
+      if (!eltern()) nein('Das können nur Eltern ändern');
+      const x = SERIEN.find(v => v.id === id) || nein('Diese Wiederholung gibt es nicht mehr');
+      if (n.tage && x.art === 'tag' && !n.tage.length) nein('Wähle mindestens einen Wochentag');
+      if (n.fuer && n.fuer !== x.fuer && (!x.fuer || (x.mit || []).length)) nein('Hier lässt sich die Person nicht ändern');
+      x.titel = (n.titel || '').trim() || x.titel;
+      if (n.notiz != null) x.notiz = n.notiz.trim().slice(0, 200) || null;
+      if (n.tage && x.art === 'tag') x.tage = n.tage;
+      if (n.foto_pflicht != null) x.foto_pflicht = n.foto_pflicht;
+      if (n.ohne_punkte != null) x.ohne_punkte = n.ohne_punkte;
+      if (n.fuer) x.fuer = n.fuer;
+      AUF.filter(a => a.serie_id === id && a.status === 'offen').forEach(a => Object.assign(a, { titel: x.titel, notiz: x.notiz || null, foto_pflicht: x.foto_pflicht, ohne_punkte: x.ohne_punkte }));
     },
     async serieLoeschen(id) { if (!eltern()) nein('Das darfst du nicht'); SERIEN = SERIEN.filter(s => s.id !== id); },
     async aufgabeBestaetigen(id, punkte, lob) {
@@ -278,6 +317,7 @@ export function demoBackend() {
       if (k.status === 'vorschlag') anEltern(ichId, 'einkauf', `${name(ichId)} wünscht sich: ${k.titel}`, 'Tippe, um zu entscheiden.', 'einkauf');
     },
     async einkaufSetzen(id, werte) {
+      await warte(); netz();
       if (!eltern()) nein('Das darfst du nicht');
       const k = KAUF.find(v => v.id === id); if (!k) return;
       const vorher = k.status; Object.assign(k, werte);

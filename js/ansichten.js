@@ -5,7 +5,7 @@ import { S, P, ich, eltern, runde, buendeln, darfPruefen, andereEltern } from '.
 import { toeneAn } from './kern.js';
 import {
   esc, euro, heute, plus, montag, tagVon, iso, wocheEnde, fmtLang, fmtKurz, fmtDatum, fmtMonat, fmtZeit,
-  wochentagKurz, relTag, relKurz, fmtTag, PUNKTE, ABZUG, wert, aufzaehlen, TIERE, FARBEN, WOCHENTAGE, HAKEN, MIKRO, KAMERA, FLAMME, LOB, ALLE, ICON, TABS,
+  wochentagKurz, relTag, relKurz, fmtTag, PUNKTE, ABZUG, wert, aufzaehlen, POKAL, TIERE, FARBEN, WOCHENTAGE, HAKEN, MIKRO, KAMERA, FLAMME, LOB, ALLE, ICON, TABS,
 } from './hilfen.js';
 
 // ------------------------------------------------------------ Bausteine
@@ -109,7 +109,7 @@ function aufgabeZeile(a, mitTier) {
   }
   return `<div class="zeile ${FERTIG.includes(a.status) ? 'fertig' : ''}" style="view-transition-name:a-${a.id}">
     <button class="haken ${stand} ${frisch(a.id) ? 'frisch' : ''}" style="--c:${esc(m.farbe)}" onclick="A.abhaken('${a.id}')" aria-label="${esc(a.titel)} abhaken">${HAKEN}</button>
-    <button class="mitte" onclick="A.auf('${a.id}')"><span class="titel">${esc(a.titel)}${marken}</span><span class="info">${mitTier ? esc(wer) + ', ' + klein(info) : info}</span></button>
+    <button class="mitte" onclick="A.auf('${a.id}')"><span class="titel">${esc(a.titel)}${marken}</span><span class="info">${mitTier ? esc(wer) + ', ' + klein(info) : info}</span>${a.notiz && a.status === 'offen' ? `<span class="info notiz">${esc(a.notiz)}</span>` : ''}</button>
     ${rechts}</div>`;
 }
 
@@ -275,6 +275,9 @@ function vEinkauf() {
     ? `Wunsch von ${esc(P(x.von).name)}, angenommen von ${esc(P(x.entschieden_von).name)}` : '';
   const bild = x => x.foto_pfad ? `<button class="pille" onclick="A.kaufBild('${x.id}')">Foto</button>` : '';
 
+  const n = S.wartetAufNetz;
+  const netz = n ? `<p class="banner ruhig" role="status">Kein Netz. ${n === 1 ? '1 Haken ist' : `${n} Haken sind`} gemerkt und ${n === 1 ? 'wird' : 'werden'} übertragen, sobald du wieder Empfang hast.</p>` : '';
+
   // Im Laden: nur die Liste, groß, die ganze Zeile hakt ab. Der Bildschirm bleibt an.
   if (S.imLaden && eltern()) {
     const gross = x => `<button class="zeile laden ${x.status === 'gekauft' ? 'fertig' : ''}" style="view-transition-name:k-${x.id}" onclick="A.kaufUm('${x.id}')" aria-label="${esc(x.titel)} abhaken">
@@ -282,7 +285,7 @@ function vEinkauf() {
       <span class="mitte"><span class="titel">${esc(x.titel)}</span>${wunsch(x) ? `<span class="info">${wunsch(x)}</span>` : ''}</span><span class="info">${esc(x.menge)}</span></button>`;
     return `<div class="kopf"><div><h1>Im Laden</h1><p class="unter">${L.length ? `Noch ${L.length} ${L.length === 1 ? 'Sache' : 'Sachen'}` : 'Alles im Korb'}</p></div>
       <button class="pille ja" onclick="A.ladenAus()">Fertig</button></div>
-      <div class="abstand">${liste(L.map(gross), 'Alles eingekauft.')}</div>
+      ${netz}<div class="abstand">${liste(L.map(gross), 'Alles eingekauft.')}</div>
       ${G.length ? `<h2>Im Korb</h2>` + liste(G.map(gross)) : ''}`;
   }
 
@@ -311,7 +314,7 @@ function vEinkauf() {
   if (oft.length) s += `<div class="chips oft" aria-label="Oft gekauft">${oft.map(t =>
     `<button class="chip nur" data-t="${esc(t)}" onclick="A.kaufSchnell(this.dataset.t)" aria-label="${esc(t)} ${eltern() ? 'auf die Liste setzen' : 'vorschlagen'}"><span aria-hidden="true">+</span>${esc(t)}</button>`).join('')}</div>`;
   if (V.length) s += `<h2>Vorschläge</h2>` + liste(V.map(vorschlag));
-  s += `<h2>Zu kaufen</h2>` + liste(L.map(kauf), 'Alles eingekauft.');
+  s += netz + `<h2>Zu kaufen</h2>` + liste(L.map(kauf), 'Alles eingekauft.');
   if (eltern() && L.length) s += `<div class="abstand"><button class="knopf still" onclick="A.ladenAn()">Ich gehe einkaufen</button></div>`;
   if (A_.length) s += `<h2>Abgelehnt</h2>` + liste(A_.map(x => `<div class="zeile" style="view-transition-name:k-${x.id}">${tier(P(x.von), 'klein')}
     <div class="mitte"><span class="titel">${esc(x.titel)}</span><span class="info">${x.entschieden_von
@@ -355,13 +358,13 @@ function vFamilie() {
     const max = Math.max(1, ...reihe.map(m => wert(m.id)));
     s += liste(reihe.map(m => {
       const w = wert(m.id), platz = 1 + reihe.filter(x => wert(x.id) > w).length;
-      const stand = S.d.best.find(b => b.mitglied_id === m.id) || {}, jk = stand.joker || 0, sr = stand.serie || 0;
+      const stand = S.d.best.find(b => b.mitglied_id === m.id) || {}, jk = stand.joker || 0, sr = stand.serie || 0, sg = stand.siege || 0;
       return `<button class="zeile" style="view-transition-name:r-${m.id}" onclick="A.verlaufAuf('${m.id}')"><span class="rang">${platz}</span>${tier(m)}
-        <span class="mitte" style="--c:${esc(m.farbe)}"><span class="titel">${esc(m.name)}${m.id === S.ich ? ' (du)' : ''}${sr > 1 ? `<span class="marke heiss" aria-label="${sr} Tage in Folge alles erledigt">${FLAMME}${sr}</span>` : ''}${jk ? `<span class="marke">${jk} Joker</span>` : ''}</span>
+        <span class="mitte" style="--c:${esc(m.farbe)}"><span class="titel">${esc(m.name)}${m.id === S.ich ? ' (du)' : ''}${sr > 1 ? `<span class="marke heiss" aria-label="${sr} Tage in Folge alles erledigt">${FLAMME}${sr}</span>` : ''}${sg ? `<span class="marke gold" aria-label="${sg} ${sg === 1 ? 'Woche' : 'Wochen'} gewonnen">${POKAL}${sg}</span>` : ''}${jk ? `<span class="marke">${jk} Joker</span>` : ''}</span>
         <span class="balken"><i style="width:${Math.max(w, 0) / max * 100}%"></i></span></span><span class="zahl ${w < 0 ? 'minus' : ''}">${w}</span></button>`;
     }), 'Noch niemand da.');
     s += `<p class="hinweis">${S.bestArt === 'woche' ? 'Die Woche endet Sonntag um 18 Uhr. Platz 1 bekommt eine Joker-Karte.' : 'Alle Punkte seit dem Start.'}
-      Die Flamme zählt die Tage in Folge, an denen alle Tagesaufgaben erledigt wurden.</p>
+      Die Flamme zählt die Tage in Folge, an denen alle Tagesaufgaben erledigt wurden. Der Pokal zählt die gewonnenen Wochen.</p>
       <div class="knoepfe"><button class="knopf still" onclick="A.geh({bestArt:'${S.bestArt === 'woche' ? 'gesamt' : 'woche'}'})">${S.bestArt === 'woche' ? 'Ewige Bestenliste zeigen' : 'Diese Woche zeigen'}</button>
       ${S.d.endstand ? `<button class="knopf still" onclick="A.feierAuf()">Letzte Woche ansehen</button>` : ''}</div>`
       + jokerKarte();
@@ -396,6 +399,7 @@ function bAufgabe(s) {
   const haengt = a.status === 'wartet' && eltern() && !pruefen;           // ich bin selbst beteiligt
   let h = `<div class="blatt-kopf">${tier(m)}<div><h3>${esc(a.titel)}</h3><p class="unter">${ART[a.art]} für ${frei ? 'alle' : zus ? esc(aufzaehlen(teile.map(x => P(x.fuer).name))) : esc(m.name)}${a.fuer_alle && !frei ? ' (war für alle)' : ''}</p></div></div>
     <div class="liste eng"><div class="zeile"><span class="mitte titel">Stand</span><span class="info">${aufgabeInfo(a)}</span></div>
+    ${a.notiz ? `<div class="zeile"><span class="mitte"><span class="titel">Notiz</span><span class="info notiz">${esc(a.notiz)}</span></span></div>` : ''}
     ${zus ? `<div class="zeile"><span class="mitte"><span class="titel">Gemeinsame Aufgabe</span><span class="info">${a.erledigt_von && a.status !== 'offen' ? `Abgehakt von ${esc(P(a.erledigt_von).name)}` : 'Einer hakt ab, dann ist sie für alle abgehakt.'}</span></span></div>` : ''}
     ${a.ohne_punkte ? `<div class="zeile"><span class="mitte"><span class="titel">Ohne Punkte</span><span class="info">Das ist selbstverständlich.${a.fuer && ABZUG[a.art] ? ` Liegen lassen kostet trotzdem ${ABZUG[a.art]} Punkte.` : ''}</span></span></div>` : ''}
     ${a.von && a.von !== a.fuer ? `<div class="zeile"><span class="mitte titel">Eingetragen von</span><span class="info">${esc(P(a.von).name)}</span></div>` : ''}
@@ -422,6 +426,9 @@ function bAufgabe(s) {
     else k.push(`<button class="knopf" onclick="A.bestaetige('${a.id}')">${!w ? 'Bestätigen' : zus ? `Bestätigen, +${w} für jeden` : `Bestätigen, +${w}`}</button>`);
     k.push(`<button class="knopf still" onclick="A.zurueckAuf('${a.id}')">${a.art === 'frei' ? 'Nicht anerkennen' : 'Noch nicht in Ordnung'}</button>`);
   }
+  if (a.status === 'offen' && a.art !== 'frei' && (eltern() || (a.von === S.ich && a.art === 'irgendwann'))) {
+    k.push(`<button class="knopf still" onclick="A.aendernAuf('${a.id}')">Ändern</button>`);
+  }
   if (eltern() || (a.von === S.ich && a.art === 'irgendwann')) {
     k.push(`<button class="knopf gefahr" onclick="A.loeschAufgabe('${a.id}')">${zus ? 'Für alle löschen' : 'Aufgabe löschen'}</button>`);
   }
@@ -445,6 +452,7 @@ function bNeu(s) {
     ${hinweis ? `<p class="hinweis">${hinweis}</p>` : ''}
     <p class="klein-titel">Was ist zu tun?</p>
     ${sprechFeld(`<input class="feld voll hell" id="neu-t" value="${esc(s.t)}" oninput="A.entwurf('t', this.value)" onkeydown="if(event.key==='Enter')A.neuAufgabe()" placeholder="${S.hoert ? 'Ich höre zu …' : 'z. B. Flur wischen'}" maxlength="120" enterkeyhint="done" autocomplete="off">`, 'neu-t')}
+    <input class="feld voll hell" style="margin-top:8px" value="${esc(s.notiz)}" oninput="A.entwurf('notiz', this.value)" placeholder="Notiz dazu, z. B. auch unter dem Bett" aria-label="Notiz (freiwillig)" maxlength="200" autocomplete="off">
     ${s.art === 'tag' && s.vor.length && s.fuer !== 'alle' && !s.zus ? `<p class="klein-titel">Oft für ${esc(P(s.fuer).name)}</p>
     <div class="chips">${s.vor.map(o => `<button class="chip nur" data-t="${esc(o)}" onclick="A.vorschlagNehmen(this.dataset.t)">${esc(o)}</button>`).join('')}</div>` : ''}
     ${s.art === 'tag' && !s.wdh ? `<p class="klein-titel">Wann?</p>${blattSchalter('wann', [['heute', 'Heute'], ['morgen', 'Morgen']])}` : ''}
@@ -469,10 +477,47 @@ function bSerie(s) {
     <div class="liste eng"><div class="zeile"><span class="mitte titel">Wiederholt sich</span><span class="info">${gross(serieText(x))}</span></div>
     ${(x.mit || []).length ? `<div class="zeile"><span class="mitte titel">Gemeinsame Aufgabe</span><span class="info">Einer hakt für alle ab</span></div>` : ''}
     ${x.ohne_punkte ? `<div class="zeile"><span class="mitte titel">Punkte</span><span class="info">Ohne Punkte</span></div>` : ''}
+    ${x.notiz ? `<div class="zeile"><span class="mitte"><span class="titel">Notiz</span><span class="info notiz">${esc(x.notiz)}</span></span></div>` : ''}
     ${x.foto_pflicht ? `<div class="zeile"><span class="mitte titel">Foto als Beweis</span><span class="info">Wird verlangt</span></div>` : ''}
     ${x.von ? `<div class="zeile"><span class="mitte titel">Eingetragen von</span><span class="info">${esc(P(x.von).name)}</span></div>` : ''}</div>
     <p class="hinweis">Was schon eingetragen ist, bleibt stehen. Es kommt nur nichts Neues mehr dazu.</p>
-    <div class="knoepfe"><button class="knopf gefahr" onclick="A.serieWeg('${x.id}')">Wiederholung beenden</button></div>`;
+    <div class="knoepfe"><button class="knopf still" onclick="A.serieAendernAuf('${x.id}')">Ändern</button>
+      <button class="knopf gefahr" onclick="A.serieWeg('${x.id}')">Wiederholung beenden</button></div>`;
+}
+
+// Gemeinsame Bausteine der beiden Ändern-Blätter
+const feldTitel = (s, id, fertig) => `<p class="klein-titel">Was ist zu tun?</p>
+  ${sprechFeld(`<input class="feld voll hell" id="${id}" value="${esc(s.t)}" oninput="A.entwurf('t', this.value)" onkeydown="if(event.key==='Enter')${fertig}()" placeholder="${S.hoert ? 'Ich höre zu …' : 'z. B. Flur wischen'}" maxlength="120" enterkeyhint="done" autocomplete="off">`, id)}
+  <p class="klein-titel">Notiz (freiwillig)</p>
+  <input class="feld voll hell" value="${esc(s.notiz)}" oninput="A.entwurf('notiz', this.value)" placeholder="z. B. auch unter dem Bett" maxlength="200" autocomplete="off">`;
+const feldWer = s => `<p class="klein-titel">Für wen?</p>
+  <div class="chips">${S.d.mitglieder.map(m => `<button class="chip ${s.fuer === m.id ? 'an' : ''}" style="--c:${esc(m.farbe)}" onclick="A.blattSetz('fuer','${m.id}')" aria-pressed="${s.fuer === m.id}">${tier(m, 'klein')}${esc(m.name)}</button>`).join('')}</div>`;
+const feldSchalter = (s, art, mitAbzug) => `<div class="liste eng"><button class="zeile" onclick="A.blattUm('foto')"><span class="mitte titel">Foto als Beweis verlangen</span>${kipp(s.foto)}</button>
+  <button class="zeile" onclick="A.blattUm('ohne')"><span class="mitte"><span class="titel">Ohne Punkte</span>
+    <span class="info">Für Selbstverständliches.${mitAbzug ? ` Liegen lassen kostet trotzdem ${ABZUG[art]} Punkte.` : ''}</span></span>${kipp(s.ohne)}</button></div>`;
+
+function bAendern(s) {
+  const a = S.d.aufgaben.find(x => x.id === s.id);
+  if (!a || a.status !== 'offen') return `<h3>Das lässt sich nicht mehr ändern</h3>`;
+  const zus = !!a.gruppe;
+  return `<h3>Aufgabe ändern</h3>${feldTitel(s, 'aend-t', 'A.aendern')}
+    ${zus || !a.fuer ? '' : feldWer(s)}
+    ${a.art === 'tag' ? `<p class="klein-titel">Wann?</p>${blattSchalter('wann', [['heute', 'Heute'], ['morgen', 'Morgen']])}` : ''}
+    ${a.art === 'irgendwann' ? '' : feldSchalter(s, a.art, !!a.fuer)}
+    ${zus ? `<p class="hinweis">Die Änderung gilt für alle, die mitmachen.</p>` : ''}
+    <div class="abstand"><button class="knopf" onclick="A.aendern()">Speichern</button></div>`;
+}
+
+function bSerieAendern(s) {
+  const x = S.d.serien.find(v => v.id === s.id);
+  if (!x) return `<h3>Diese Wiederholung gibt es nicht mehr</h3>`;
+  return `<h3>Wiederholung ändern</h3>${feldTitel(s, 'saend-t', 'A.serieAendern')}
+    ${x.fuer && !(x.mit || []).length ? feldWer(s) : ''}
+    ${x.art === 'tag' ? `<p class="klein-titel">An welchen Tagen?</p>
+    <div class="chips wochentage">${WOCHENTAGE.map(([n, l]) => `<button class="chip nur ${s.wtage.includes(n) ? 'an' : ''}" onclick="A.neuTag(${n})">${l}</button>`).join('')}</div>` : ''}
+    ${feldSchalter(s, x.art, !!x.fuer)}
+    <p class="hinweis">Gilt für alles, was ab jetzt entsteht. Was schon in der Liste steht, bekommt den neuen Text gleich mit.</p>
+    <div class="abstand"><button class="knopf" onclick="A.serieAendern()">Speichern</button></div>`;
 }
 
 const bFrei = s => `<h3>Freiwillig erledigt</h3><p class="unter">Wenn ein Elternteil bestätigt, bekommst du 1 Punkt.</p>
@@ -602,7 +647,8 @@ function bKauf(s) {
 function bVerlauf(s) {
   const m = P(s.id);
   const text = l => l.aufgaben?.titel || (l.grund === 'verpasst' ? 'Aufgabe verpasst' : 'Aufgabe');
-  return `<div class="blatt-kopf">${tier(m)}<div><h3>Punkte von ${esc(m.name)}</h3><p class="unter">Die letzten Einträge</p></div></div>
+  const siege = (S.d.best.find(b => b.mitglied_id === s.id) || {}).siege || 0;
+  return `<div class="blatt-kopf">${tier(m)}<div><h3>Punkte von ${esc(m.name)}</h3><p class="unter">${siege ? `${siege} ${siege === 1 ? 'Woche' : 'Wochen'} gewonnen. ` : ''}Die letzten Einträge</p></div></div>
     <div class="abstand">${s.log ? liste(s.log.map(l => `<div class="zeile"><div class="mitte"><span class="titel">${esc(text(l))}</span>
       <span class="info">${l.grund === 'verpasst' ? 'Verpasst, ' : ''}${relKurz(l.am)}</span></div>
       <span class="zahl klein ${l.wert < 0 ? 'minus' : ''}">${l.wert > 0 ? '+' : '−'}${Math.abs(l.wert)}</span></div>`), 'Noch keine Punkte.')
@@ -628,7 +674,7 @@ function bKaufBild(s) {
 
 const BLATT = {
   aufgabe: bAufgabe, neu: bNeu, frei: bFrei, joker: bJoker, schwein: bSchwein, neuschwein: bNeuSchwein, einst: bEinst,
-  code: bCode, termin: bTermin, merk: bMerk, nein: bNein, kauf: bKauf, verlauf: bVerlauf, serie: bSerie, zurueck: bZurueck, kbild: bKaufBild,
+  code: bCode, termin: bTermin, merk: bMerk, nein: bNein, kauf: bKauf, verlauf: bVerlauf, serie: bSerie, zurueck: bZurueck, kbild: bKaufBild, aendern: bAendern, saendern: bSerieAendern,
 };
 
 const vBlatt = () => `<div class="schleier" onclick="if(event.target===this)A.zu()"><div class="blatt" role="dialog" aria-modal="true">
