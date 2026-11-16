@@ -5,10 +5,22 @@ import { S, P, ich, eltern, runde, buendeln, darfPruefen, andereEltern } from '.
 import { toeneAn } from './kern.js';
 import {
   esc, euro, heute, plus, montag, tagVon, iso, wocheEnde, fmtLang, fmtKurz, fmtDatum, fmtMonat, fmtZeit,
-  wochentagKurz, relTag, relKurz, fmtTag, PUNKTE, ABZUG, wert, aufzaehlen, POKAL, TIERE, FARBEN, WOCHENTAGE, HAKEN, MIKRO, KAMERA, FLAMME, LOB, ALLE, ICON, TABS,
+  wochentagKurz, relTag, relKurz, fmtTag, PUNKTE, ABZUG, wert, aufzaehlen, MAX_FOTOS, fotosVon, fotoText, KREUZ, POKAL, TIERE, FARBEN, WOCHENTAGE, HAKEN, MIKRO, KAMERA, FLAMME, LOB, ALLE, ICON, TABS,
 } from './hilfen.js';
 
 // ------------------------------------------------------------ Bausteine
+
+// Fotos vor dem Hochladen: kleine Vorschauen, jede lässt sich wieder entfernen. Das Plus holt das nächste Foto.
+const fotoLeiste = bilder => `<div class="fotoleiste">${bilder.map((b, i) =>
+  `<span class="mini"><img src="${esc(b.url)}" alt="Foto ${i + 1}"><button onclick="A.fotoWeg(${i})" aria-label="Foto ${i + 1} entfernen">${KREUZ}</button></span>`).join('')}${
+  bilder.length < MAX_FOTOS ? `<button class="mini dazu" onclick="A.fotoDazu()" aria-label="Noch ein Foto">+</button>` : ''}</div>`;
+
+// Fotos ansehen: eins steht groß da, mehrere liegen nebeneinander zum Wischen. Antippen zeigt sie über die ganze Seite.
+function galerie(urls, n, alt) {
+  if (!urls) return `<div class="beweis laedt">${n > 1 ? 'Fotos werden' : 'Foto wird'} geladen …</div>`;
+  const bild = (u, i) => `<button class="bild" onclick="A.gross(${i})" aria-label="${urls.length > 1 ? `Foto ${i + 1} von ${urls.length}` : 'Foto'} groß ansehen"><img class="beweis" src="${esc(u)}" alt="${alt}"></button>`;
+  return urls.length > 1 ? `<div class="bilder">${urls.map(bild).join('')}</div><p class="hinweis mittig">${urls.length} Fotos. Wische zur Seite.</p>` : urls.map(bild).join('');
+}
 
 export const tier = (m, g = '') => `<span class="tier ${g}" style="--c:${esc(m.farbe)}" aria-hidden="true">${
   m.vorschau ? `<img src="${esc(m.vorschau)}" alt="">`
@@ -97,7 +109,7 @@ function aufgabeZeile(a, mitTier) {
   const info = aufgabeInfo(a);
   const marken = (a.art === 'frei' ? '<span class="marke">freiwillig</span>' : '')
     + (a.foto_pflicht && a.status === 'offen' ? '<span class="marke">mit Foto</span>' : '')
-    + (a.foto_pfad && a.status === 'wartet' ? '<span class="marke">Foto</span>' : '')
+    + (a.foto_pfad && a.status === 'wartet' ? `<span class="marke">${fotoText(fotosVon(a).length)}</span>` : '')
     + (a.fuer_alle && a.fuer ? '<span class="marke">für alle</span>' : '')
     + (zus ? `<span class="marke">${esc(zusText)}</span>` : '')
     + (a.ohne_punkte && !FERTIG.includes(a.status) ? '<span class="marke">ohne Punkte</span>' : '');
@@ -273,7 +285,7 @@ function vEinkauf() {
   const V = k.filter(x => x.status === 'vorschlag'), A_ = k.filter(x => x.status === 'abgelehnt' && x.von === S.ich);
   const wunsch = x => x.entschieden_von && x.von && x.von !== x.entschieden_von
     ? `Wunsch von ${esc(P(x.von).name)}, angenommen von ${esc(P(x.entschieden_von).name)}` : '';
-  const bild = x => x.foto_pfad ? `<button class="pille" onclick="A.kaufBild('${x.id}')">Foto</button>` : '';
+  const bild = x => x.foto_pfad ? `<button class="pille" onclick="A.kaufBild('${x.id}')">${fotoText(fotosVon(x).length)}</button>` : '';
 
   const n = S.wartetAufNetz;
   const netz = n ? `<p class="banner ruhig" role="status">Kein Netz. ${n === 1 ? '1 Haken ist' : `${n} Haken sind`} gemerkt und ${n === 1 ? 'wird' : 'werden'} übertragen, sobald du wieder Empfang hast.</p>` : '';
@@ -306,11 +318,11 @@ function vEinkauf() {
     <div class="eingabe" style="margin:16px 0 4px">
       <div class="sprech"><input class="feld hell" id="kauf" value="${esc(S.kaufT)}" oninput="A.kaufTippen(this.value)" onkeydown="if(event.key==='Enter')A.kaufNeu()"
         placeholder="${eltern() ? 'Was fehlt?' : 'Was wünschst du dir?'}" aria-label="Artikel" maxlength="80" enterkeyhint="done" autocomplete="off">
-        <button class="mikro ${S.kaufBild ? 'dabei' : ''}" onclick="A.kaufFoto()" aria-label="${S.kaufBild ? 'Anderes Foto nehmen' : 'Foto dazu'}">${KAMERA}</button></div>
+        <button class="mikro ${S.kaufBilder.length ? 'dabei' : ''}" onclick="A.fotoDazu()" aria-label="${S.kaufBilder.length ? 'Noch ein Foto dazu' : 'Foto dazu'}">${KAMERA}</button></div>
       <input class="feld hell" id="menge" value="${esc(S.kaufM)}" oninput="A.setz('kaufM', this.value)" onkeydown="if(event.key==='Enter')A.kaufNeu()"
         placeholder="Menge" style="flex:0 0 78px" aria-label="Menge" maxlength="12" enterkeyhint="done" autocomplete="off">
       <button class="knopf" onclick="A.kaufNeu()">${eltern() ? 'Dazu' : 'Vorschlagen'}</button></div>`;
-  if (S.kaufBild) s += `<p class="hinweis">Ein Foto hängt am nächsten Eintrag. <button class="text-link" onclick="A.kaufFotoWeg()">Entfernen</button></p>`;
+  if (S.kaufBilder.length) s += fotoLeiste(S.kaufBilder) + `<p class="hinweis">${S.kaufBilder.length > 1 ? 'Die Fotos hängen' : 'Das Foto hängt'} am nächsten Eintrag.</p>`;
   if (oft.length) s += `<div class="chips oft" aria-label="Oft gekauft">${oft.map(t =>
     `<button class="chip nur" data-t="${esc(t)}" onclick="A.kaufSchnell(this.dataset.t)" aria-label="${esc(t)} ${eltern() ? 'auf die Liste setzen' : 'vorschlagen'}"><span aria-hidden="true">+</span>${esc(t)}</button>`).join('')}</div>`;
   if (V.length) s += `<h2>Vorschläge</h2>` + liste(V.map(vorschlag));
@@ -356,15 +368,19 @@ function vFamilie() {
     const wert = id => (S.d.best.find(b => b.mitglied_id === id) || {})[feld] || 0;
     const reihe = [...S.d.mitglieder].sort((a, b) => wert(b.id) - wert(a.id));
     const max = Math.max(1, ...reihe.map(m => wert(m.id)));
-    s += liste(reihe.map(m => {
+    s += `<h2>${S.bestArt === 'woche' ? 'Diese Woche' : 'Seit dem Start'}</h2>` + liste(reihe.map(m => {
       const w = wert(m.id), platz = 1 + reihe.filter(x => wert(x.id) > w).length;
       const stand = S.d.best.find(b => b.mitglied_id === m.id) || {}, jk = stand.joker || 0, sr = stand.serie || 0, sg = stand.siege || 0;
       return `<button class="zeile" style="view-transition-name:r-${m.id}" onclick="A.verlaufAuf('${m.id}')"><span class="rang">${platz}</span>${tier(m)}
         <span class="mitte" style="--c:${esc(m.farbe)}"><span class="titel">${esc(m.name)}${m.id === S.ich ? ' (du)' : ''}${sr > 1 ? `<span class="marke heiss" aria-label="${sr} Tage in Folge alles erledigt">${FLAMME}${sr}</span>` : ''}${sg ? `<span class="marke gold" aria-label="${sg} ${sg === 1 ? 'Woche' : 'Wochen'} gewonnen">${POKAL}${sg}</span>` : ''}${jk ? `<span class="marke">${jk} Joker</span>` : ''}</span>
         <span class="balken"><i style="width:${Math.max(w, 0) / max * 100}%"></i></span></span><span class="zahl ${w < 0 ? 'minus' : ''}">${w}</span></button>`;
     }), 'Noch niemand da.');
-    s += `<p class="hinweis">${S.bestArt === 'woche' ? 'Die Woche endet Sonntag um 18 Uhr. Platz 1 bekommt eine Joker-Karte.' : 'Alle Punkte seit dem Start.'}
-      Die Flamme zählt die Tage in Folge, an denen alle Tagesaufgaben erledigt wurden. Der Pokal zählt die gewonnenen Wochen.</p>
+    const zeichen = [
+      S.bestArt === 'woche' && ['<span class="marke">Joker</span>', 'Gewinnt Platz 1 am Sonntag um 18 Uhr'],
+      S.d.best.some(b => b.serie > 1) && [`<span class="marke heiss">${FLAMME}</span>`, 'Tage in Folge alles erledigt'],
+      S.d.best.some(b => b.siege > 0) && [`<span class="marke gold">${POKAL}</span>`, 'Gewonnene Wochen'],
+    ].filter(Boolean);
+    s += `${zeichen.length ? `<ul class="legende">${zeichen.map(([z, t]) => `<li><span class="zeichen">${z}</span>${t}</li>`).join('')}</ul>` : ''}
       <div class="knoepfe"><button class="knopf still" onclick="A.geh({bestArt:'${S.bestArt === 'woche' ? 'gesamt' : 'woche'}'})">${S.bestArt === 'woche' ? 'Ewige Bestenliste zeigen' : 'Diese Woche zeigen'}</button>
       ${S.d.endstand ? `<button class="knopf still" onclick="A.feierAuf()">Letzte Woche ansehen</button>` : ''}</div>`
       + jokerKarte();
@@ -395,7 +411,7 @@ function bAufgabe(s) {
   const a = S.d.aufgaben.find(x => x.id === s.id);
   if (!a) return `<h3>Diese Aufgabe gibt es nicht mehr</h3>`;
   const frei = !a.fuer, m = frei ? ALLE : P(a.fuer), meine = a.fuer === S.ich, serie = a.serie_id && S.d.serien.find(x => x.id === a.serie_id);
-  const teile = runde(a), zus = teile.length > 1, pruefen = darfPruefen(a), w = wert(a);
+  const teile = runde(a), zus = teile.length > 1, pruefen = darfPruefen(a), w = wert(a), fotos = fotosVon(a);
   const haengt = a.status === 'wartet' && eltern() && !pruefen;           // ich bin selbst beteiligt
   let h = `<div class="blatt-kopf">${tier(m)}<div><h3>${esc(a.titel)}</h3><p class="unter">${ART[a.art]} für ${frei ? 'alle' : zus ? esc(aufzaehlen(teile.map(x => P(x.fuer).name))) : esc(m.name)}${a.fuer_alle && !frei ? ' (war für alle)' : ''}</p></div></div>
     <div class="liste eng"><div class="zeile"><span class="mitte titel">Stand</span><span class="info">${aufgabeInfo(a)}</span></div>
@@ -403,11 +419,11 @@ function bAufgabe(s) {
     ${zus ? `<div class="zeile"><span class="mitte"><span class="titel">Gemeinsame Aufgabe</span><span class="info">${a.erledigt_von && a.status !== 'offen' ? `Abgehakt von ${esc(P(a.erledigt_von).name)}` : 'Einer hakt ab, dann ist sie für alle abgehakt.'}</span></span></div>` : ''}
     ${a.ohne_punkte ? `<div class="zeile"><span class="mitte"><span class="titel">Ohne Punkte</span><span class="info">Das ist selbstverständlich.${a.fuer && ABZUG[a.art] ? ` Liegen lassen kostet trotzdem ${ABZUG[a.art]} Punkte.` : ''}</span></span></div>` : ''}
     ${a.von && a.von !== a.fuer ? `<div class="zeile"><span class="mitte titel">Eingetragen von</span><span class="info">${esc(P(a.von).name)}</span></div>` : ''}
-    ${a.foto_pflicht ? `<div class="zeile"><span class="mitte titel">Foto als Beweis</span><span class="info">${a.foto_pfad ? 'Ist dabei' : 'Wird verlangt'}</span></div>` : ''}
+    ${a.foto_pflicht ? `<div class="zeile"><span class="mitte titel">Foto als Beweis</span><span class="info">${fotos.length > 1 ? `${fotos.length} sind dabei` : fotos.length ? 'Ist dabei' : 'Wird verlangt'}</span></div>` : ''}
     ${serie ? `<div class="zeile"><span class="mitte titel">Wiederholt sich</span><span class="info">${gross(serieText(serie))}</span></div>` : ''}
     ${a.hinweis ? `<div class="zeile"><span class="mitte"><span class="titel">Das fehlt noch</span><span class="info">${esc(a.hinweis)}</span></span></div>` : ''}
     ${a.lob ? `<div class="zeile"><span class="mitte"><span class="titel">${esc(a.lob)}</span><span class="info">Lob von ${esc(P(a.bestaetigt_von).name)}</span></span></div>` : ''}</div>`;
-  if (a.foto_pfad) h += s.foto ? `<img class="beweis" src="${esc(s.foto)}" alt="Foto zur Aufgabe">` : `<div class="beweis laedt">Foto wird geladen …</div>`;
+  if (fotos.length) h += galerie(s.fotos, fotos.length, 'Foto zur Aufgabe');
 
   if (pruefen) h += `<p class="klein-titel">Ein Lob dazu?</p><div class="chips">${LOB.map(l =>
     `<button class="chip nur ${s.lob === l ? 'an' : ''}" data-l="${esc(l)}" onclick="A.lobWahl(this.dataset.l)">${esc(l)}</button>`).join('')}</div>`;
@@ -417,7 +433,7 @@ function bAufgabe(s) {
     if (a.foto_pflicht && !a.foto_pfad) k.push(`<button class="knopf" onclick="A.mitFoto('${a.id}')">Foto aufnehmen und abhaken</button>`);
     else {
       k.push(`<button class="knopf" onclick="A.abhaken('${a.id}')">Erledigt</button>`);
-      if (a.art !== 'irgendwann' && !a.foto_pfad) k.push(`<button class="knopf still" onclick="A.mitFoto('${a.id}')">Mit Foto abhaken</button>`);
+      if (a.art !== 'irgendwann') k.push(`<button class="knopf still" onclick="A.mitFoto('${a.id}')">${fotos.length ? 'Neue Fotos aufnehmen' : 'Mit Foto abhaken'}</button>`);
     }
     if (meine && !zus && a.art === 'tag' && !a.verschoben && a.faellig === heute()) k.push(`<button class="knopf still" onclick="A.morgen('${a.id}')">Auf morgen verschieben</button>`);
   }
@@ -523,10 +539,19 @@ function bSerieAendern(s) {
 const bFrei = s => `<h3>Freiwillig erledigt</h3><p class="unter">Wenn ein Elternteil bestätigt, bekommst du 1 Punkt.</p>
   <p class="klein-titel">Was hast du gemacht?</p>
   ${sprechFeld(`<input class="feld voll hell" id="frei-t" value="${esc(s.t)}" oninput="A.entwurf('t', this.value)" onkeydown="if(event.key==='Enter')A.neuFrei()" placeholder="${S.hoert ? 'Ich höre zu …' : 'z. B. Wäsche gemacht'}" maxlength="120" enterkeyhint="done" autocomplete="off">`, 'frei-t')}
-  ${s.bildUrl ? `<img class="beweis" src="${esc(s.bildUrl)}" alt="Dein Foto dazu">` : ''}
-  <div class="knoepfe"><button class="knopf still" onclick="A.freiFoto()">${s.bildUrl ? 'Anderes Foto nehmen' : 'Foto hinzufügen'}</button>
-    ${s.bildUrl ? `<button class="knopf gefahr" onclick="A.freiFotoWeg()">Foto entfernen</button>` : ''}
-    <button class="knopf" onclick="A.neuFrei()" ${s.laedt ? 'disabled' : ''}>${s.laedt ? 'Foto wird hochgeladen …' : 'Eintragen'}</button></div>`;
+  ${s.bilder.length ? fotoLeiste(s.bilder) : ''}
+  <div class="knoepfe">${s.bilder.length ? '' : `<button class="knopf still" onclick="A.fotoDazu()">Foto hinzufügen</button>`}
+    <button class="knopf" onclick="A.neuFrei()" ${s.laedt ? 'disabled' : ''}>${s.laedt ? (s.bilder.length > 1 ? 'Fotos werden hochgeladen …' : 'Foto wird hochgeladen …') : 'Eintragen'}</button></div>`;
+
+// Abhaken mit Foto: Das erste ist schon aufgenommen, hier kommen weitere dazu.
+function bFotos(s) {
+  const a = S.d.aufgaben.find(x => x.id === s.id), n = s.bilder.length;
+  if (!a) return `<h3>Diese Aufgabe gibt es nicht mehr</h3>`;
+  return `<h3>${esc(a.titel)}</h3><p class="unter">${n > 1 ? `${n} Fotos sind dabei.` : n ? 'Reicht ein Foto nicht? Tippe auf das Plus.' : 'Tippe auf das Plus für ein Foto.'}</p>
+    ${fotoLeiste(s.bilder)}
+    <div class="knoepfe"><button class="knopf" onclick="A.fotosAb()" ${s.laedt || !n ? 'disabled' : ''}>${
+      s.laedt ? (n > 1 ? 'Fotos werden hochgeladen …' : 'Foto wird hochgeladen …') : n > 1 ? `Mit ${n} Fotos abhaken` : 'Mit Foto abhaken'}</button></div>`;
+}
 
 const bJoker = () => `<img class="grosskarte" src="icons/joker.webp" alt="Joker-Karte" style="view-transition-name:jokerkarte">
   <h3>Joker heute einlösen?</h3>
@@ -669,12 +694,12 @@ function bZurueck(s) {
 function bKaufBild(s) {
   const k = S.d.einkauf.find(x => x.id === s.id);
   return `<h3>${esc(k ? k.titel : 'Foto')}</h3>${k && k.von ? `<p class="unter">Von ${esc(P(k.von).name)}</p>` : ''}
-    ${s.url ? `<img class="beweis hoch" src="${esc(s.url)}" alt="Foto zum Einkauf">` : `<div class="beweis laedt">Foto wird geladen …</div>`}`;
+    ${galerie(s.fotos, k ? fotosVon(k).length : 1, 'Foto zum Einkauf')}`;
 }
 
 const BLATT = {
   aufgabe: bAufgabe, neu: bNeu, frei: bFrei, joker: bJoker, schwein: bSchwein, neuschwein: bNeuSchwein, einst: bEinst,
-  code: bCode, termin: bTermin, merk: bMerk, nein: bNein, kauf: bKauf, verlauf: bVerlauf, serie: bSerie, zurueck: bZurueck, kbild: bKaufBild, aendern: bAendern, saendern: bSerieAendern,
+  code: bCode, termin: bTermin, merk: bMerk, nein: bNein, kauf: bKauf, verlauf: bVerlauf, serie: bSerie, zurueck: bZurueck, kbild: bKaufBild, fotos: bFotos, aendern: bAendern, saendern: bSerieAendern,
 };
 
 const vBlatt = () => `<div class="schleier" onclick="if(event.target===this)A.zu()"><div class="blatt" role="dialog" aria-modal="true">

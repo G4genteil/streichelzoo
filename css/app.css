@@ -421,4 +421,33 @@ html[data-zug=rein]::view-transition-new(seite){animation-name:rein-klein;animat
 @keyframes feier-auf{from{opacity:0;transform:scale(1.06)}}
 @keyframes feier-zu{to{opacity:0;transform:scale(.96)}}
 
+/* Mehrere Fotos: Leiste beim Sammeln, Galerie zum Ansehen, Lupe über die ganze Seite */
+.fotoleiste{display:flex;flex-wrap:wrap;gap:12px;margin:16px 2px 0}
+.mini{position:relative;width:72px;height:72px;border-radius:14px;flex:none}
+.mini img{width:100%;height:100%;object-fit:cover;border-radius:14px;display:block}
+.mini button{position:absolute;top:-7px;right:-7px;width:24px;height:24px;border-radius:50%;background:var(--tinte);color:var(--grund);display:grid;place-items:center}
+.mini button::after{content:"";position:absolute;inset:-9px}
+.mini button svg{width:10px;height:10px;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;fill:none}
+.mini.dazu{background:var(--feld);color:var(--wiese);font-size:30px;font-weight:300;line-height:1;display:grid;place-items:center;transition:transform .22s var(--feder)}
+.mini.dazu:active{transform:scale(.92)}
+.bild{display:block;width:100%;padding:0}
+.bilder{display:flex;gap:8px;overflow-x:auto;scroll-snap-type:x mandatory;margin:14px -16px 0;padding:0 16px;scrollbar-width:none}
+.bilder::-webkit-scrollbar{display:none}
+.bilder .bild{flex:0 0 80%;scroll-snap-align:center}
+.bilder .beweis{margin-top:0;height:250px;max-height:none}
+.hinweis.mittig{text-align:center}
+.lupe{position:fixed;inset:0;z-index:30;background:#000;animation:lupe-auf .2s ease-out}
+.lupe .rolle{display:flex;height:100%;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none}
+.lupe .rolle::-webkit-scrollbar{display:none}
+.lupe img{flex:0 0 100%;width:100%;height:100%;object-fit:contain;scroll-snap-align:center}
+.lupe .zu{position:absolute;top:calc(env(safe-area-inset-top) + 12px);right:14px;width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.18);color:#fff;display:grid;place-items:center}
+.lupe .zu svg{width:14px;height:14px;stroke:currentColor;stroke-width:2;stroke-linecap:round;fill:none}
+.lupe .zaehler{position:absolute;left:50%;bottom:calc(env(safe-area-inset-bottom) + 18px);transform:translateX(-50%);color:#fff;font-size:13px;font-weight:600;background:rgba(255,255,255,.18);padding:5px 12px;border-radius:99px}
+@keyframes lupe-auf{from{opacity:0}}
+/* Bestenliste: was die Zeichen bedeuten */
+.legende{list-style:none;margin:14px 4px 0;padding:0;display:grid;gap:8px;font-size:13px;color:var(--leise)}
+.legende li{display:flex;align-items:center;gap:10px}
+.legende .zeichen{flex:0 0 46px;display:flex}
+.legende .marke{margin:0}
+.legende .marke svg{margin-right:0}
 @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}

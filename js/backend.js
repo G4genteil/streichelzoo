@@ -11,7 +11,7 @@ function deutsch(e) {
   if (/farbe_form|tier_kurz|bild_form/.test(m)) return 'Dieser Wert passt nicht';
   if (/betrag_grenze/.test(m)) return 'Der Betrag ist zu groß';
   if (/Anonymous sign-ins are disabled/i.test(m)) return 'In Supabase sind anonyme Anmeldungen noch ausgeschaltet';
-  if (e?.code === 'PGRST202' || e?.code === 'PGRST204' || e?.code === '42883' || /einkauf_status_check/.test(m)) return 'Dafür fehlt noch ein Update in Supabase (Dateien 05 bis 09)';
+  if (e?.code === 'PGRST202' || e?.code === 'PGRST204' || e?.code === '42883' || /einkauf_status_check/.test(m)) return 'Dafür fehlt noch ein Update in Supabase (Dateien 05 bis 10)';
   console.error('Supabase:', e);
   return 'Das hat nicht geklappt' + (m ? ` (${m.slice(0, 120)})` : '');
 }
@@ -101,13 +101,15 @@ export function supabaseBackend(sb, url) {
     aufgabeAnlegen: a => rpc('aufgabe_anlegen', {
       p_titel: a.titel, p_art: a.art, p_fuer: a.fuer, p_faellig: a.faellig ?? null,
       p_foto_pflicht: !!a.foto_pflicht, p_erinnerung_tage: a.erinnerung_tage ?? 7,
-      ...(a.foto ? { p_foto: a.foto } : {}),                  // nur mitschicken, wenn es eins gibt (braucht 06_persoenlich.sql)
+      ...(a.fotos && a.fotos.length ? { p_foto: a.fotos[0] } : {}),             // nur mitschicken, wenn es eins gibt (braucht 06_persoenlich.sql)
+      ...(a.fotos && a.fotos.length > 1 ? { p_weitere: a.fotos.slice(1) } : {}),  // mehr als eins braucht 10_fotos.sql
       ...(a.mit && a.mit.length ? { p_mit: a.mit } : {}), ...(a.ohne_punkte ? { p_ohne_punkte: true } : {}),      // brauchen 08_gemeinsam.sql
       ...(a.notiz ? { p_notiz: a.notiz } : {}) }),                                                               // braucht 09_feinschliff.sql
     // Leere Angaben bleiben, wie sie sind. Die Notiz wird immer mitgeschickt: leer heißt „keine Notiz".
     aufgabeAendern: (id, n) => rpc('aufgabe_aendern', { p_id: id, p_titel: n.titel, p_notiz: n.notiz ?? '', p_fuer: n.fuer ?? null,
       p_faellig: n.faellig ?? null, p_foto_pflicht: n.foto_pflicht ?? null, p_ohne_punkte: n.ohne_punkte ?? null }),
-    aufgabeErledigen: (id, foto) => rpc('aufgabe_erledigen', { p_id: id, p_foto: foto ?? null }),
+    aufgabeErledigen: (id, fotos) => rpc('aufgabe_erledigen', { p_id: id, p_foto: (fotos && fotos[0]) ?? null,
+      ...(fotos && fotos.length > 1 ? { p_weitere: fotos.slice(1) } : {}) }),                                     // braucht 10_fotos.sql
     // Lob und Grund nur mitschicken, wenn es sie gibt (brauchen 07_miteinander.sql).
     aufgabeBestaetigen: (id, punkte, lob) => rpc('aufgabe_bestaetigen', { p_id: id, p_punkte: punkte ?? null, ...(lob ? { p_lob: lob } : {}) }),
     aufgabeZurueck: (id, grund) => rpc('aufgabe_zurueckgeben', { p_id: id, ...(grund ? { p_grund: grund } : {}) }),
@@ -125,7 +127,8 @@ export function supabaseBackend(sb, url) {
     punkteVerlauf: id => x(sb.from('punkte').select('wert,grund,am,aufgaben(titel)').eq('mitglied_id', id).order('am', { ascending: false }).limit(30)),
 
     // ---------- Einkauf
-    einkaufNeu: k => x(sb.from('einkauf').insert({ titel: k.titel, menge: k.menge || '', status: k.status, von: k.von, ...(k.foto_pfad ? { foto_pfad: k.foto_pfad } : {}) })),
+    einkaufNeu: k => x(sb.from('einkauf').insert({ titel: k.titel, menge: k.menge || '', status: k.status, von: k.von,
+      ...(k.fotos && k.fotos.length ? { foto_pfad: k.fotos[0] } : {}), ...(k.fotos && k.fotos.length > 1 ? { weitere_fotos: k.fotos.slice(1) } : {}) })),
     einkaufLos: () => rpc('einkauf_los'),
     einkaufSetzen: (id, werte) => x(sb.from('einkauf').update(werte).eq('id', id)),
     einkaufLoeschen: id => x(sb.from('einkauf').delete().eq('id', id)),
@@ -162,10 +165,11 @@ export function supabaseBackend(sb, url) {
       if (error) throw new Error(deutsch(error));
       return pfad;
     },
-    async fotoUrl(pfad) {
-      const { data, error } = await sb.storage.from('beweise').createSignedUrl(pfad, 3600);
+    async fotoUrls(pfade) {                                  // in derselben Reihenfolge wie die Pfade
+      if (!pfade.length) return [];
+      const { data, error } = await sb.storage.from('beweise').createSignedUrls(pfade, 3600);
       if (error) throw new Error(deutsch(error));
-      return data.signedUrl;
+      return data.map(d => d.signedUrl).filter(Boolean);
     },
   };
 }

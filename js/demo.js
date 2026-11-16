@@ -22,10 +22,11 @@ export function demoBackend() {
     id: neuId(), titel, art, fuer, von: 'm1', status, verschoben: false, foto_pflicht: false, foto_pfad: null, erinnerung_tage: 7,
     faellig: art === 'tag' || art === 'frei' ? h : art === 'woche' ? wocheEnde() : null,
     erledigt_am: status === 'offen' ? null : jetzt(), bestaetigt_von: null, created_at: jetzt(),
-    ohne_punkte: false, gruppe: null, erledigt_von: null, notiz: null, ...mehr });
+    ohne_punkte: false, gruppe: null, erledigt_von: null, notiz: null, weitere_fotos: null, ...mehr });
   let AUF = [
     aufgabe('Spülmaschine ausräumen', 'tag', 'm4'), aufgabe('Müll rausbringen', 'tag', 'm4', 'wartet'),
     aufgabe('Zimmer saugen', 'tag', 'm3', 'offen', { foto_pflicht: true }), aufgabe('Wäsche aufhängen', 'tag', 'm3', 'wartet'),
+    aufgabe('Hausaufgaben zeigen', 'tag', 'm3', 'wartet', { foto_pflicht: true, foto_pfad: 'icons/logo.webp', weitere_fotos: ['icons/joker.webp', 'icons/logo.webp'] }),
     aufgabe('Altglas wegbringen', 'tag', 'm2', 'offen'), aufgabe('Tisch decken', 'tag', 'm3', 'offen', { faellig: plus(h, 1) }),
     aufgabe('Keller aufräumen', 'woche', 'm4'), aufgabe('Fahrrad winterfest machen', 'woche', 'm3'),
     aufgabe('Laub im Garten harken', 'woche', 'm2', 'erledigt'),
@@ -56,7 +57,7 @@ export function demoBackend() {
     { id: neuId(), titel: 'Haferflocken', menge: '', status: 'liste', von: 'm2', grund: null },
     { id: neuId(), titel: 'Äpfel', menge: '1 kg', status: 'liste', von: 'm1', grund: null },
     { id: neuId(), titel: 'Spülmittel', menge: '', status: 'gekauft', von: 'm1', grund: null },
-    { id: neuId(), titel: 'Eistee Pfirsich', menge: '2×', status: 'vorschlag', von: 'm3', grund: null, foto_pfad: 'icons/logo.webp' },
+    { id: neuId(), titel: 'Eistee Pfirsich', menge: '2×', status: 'vorschlag', von: 'm3', grund: null, foto_pfad: 'icons/logo.webp', weitere_fotos: ['icons/joker.webp'] },
     { id: neuId(), titel: 'Tiefkühlpizza', menge: '3×', status: 'vorschlag', von: 'm4', grund: null },
     { id: neuId(), titel: 'Energy-Drinks', menge: '6×', status: 'abgelehnt', von: 'm3', grund: 'Zu viel Zucker', entschieden_von: 'm1' },
     { id: neuId(), titel: 'Gummibärchen', menge: '', status: 'liste', von: 'm4', grund: null, entschieden_von: 'm2' },
@@ -157,7 +158,8 @@ export function demoBackend() {
       const tag = a.art === 'tag' ? (a.faellig || h) : a.art === 'woche' ? wocheEnde() : a.art === 'frei' ? h : null;
       if (a.art === 'tag' && tag === h && dabei.some(id => JOKER_HEUTE.includes(id))) nein('An diesem Tag ist ein Joker eingelöst');
       const ohne = !!a.ohne_punkte && (a.art === 'tag' || a.art === 'woche'), gruppe = dabei.length > 1 ? neuId() : null;
-      const notiz = (a.notiz || '').trim().slice(0, 200) || null;
+      const notiz = (a.notiz || '').trim().slice(0, 200) || null, fotos = a.art === 'frei' ? (a.fotos || []) : [];
+      if (fotos.length > 12) nein('Das sind zu viele Fotos. Mehr als 12 gehen nicht.');
       const wann = a.art === 'irgendwann' ? 'Ohne Datum' : a.art === 'woche' ? 'Bis Sonntag, 18 Uhr' : tag === h ? 'Für heute' : 'Für morgen';
       if (!a.fuer) {
         const neu = aufgabe(a.titel, a.art, null, 'offen', { von: ichId, fuer_alle: true, faellig: tag, foto_pflicht: !!a.foto_pflicht, ohne_punkte: ohne, notiz });
@@ -168,31 +170,33 @@ export function demoBackend() {
       }
       for (const p of dabei) {
         const neu = aufgabe(a.titel, a.art, p, a.art === 'frei' ? 'wartet' : 'offen', { von: ichId, faellig: tag, foto_pflicht: !!a.foto_pflicht,
-          foto_pfad: a.foto || null, erinnerung_tage: a.erinnerung_tage || 7, ohne_punkte: ohne, gruppe, notiz });
+          foto_pfad: fotos[0] || null, weitere_fotos: fotos.length > 1 ? fotos.slice(1) : null, erinnerung_tage: a.erinnerung_tage || 7, ohne_punkte: ohne, gruppe, notiz });
         AUF.push(neu);
-        if (a.art === 'frei') anEltern(ichId, 'erledigt', `${name(ichId)} hat freiwillig etwas erledigt`, a.titel + (a.foto ? ' (mit Foto)' : ''), 'aufgabe:' + neu.id);
+        if (a.art === 'frei') anEltern(ichId, 'erledigt', `${name(ichId)} hat freiwillig etwas erledigt`, a.titel + (fotos.length > 1 ? ` (mit ${fotos.length} Fotos)` : fotos.length ? ' (mit Foto)' : ''), 'aufgabe:' + neu.id);
         else if (p !== ichId) an(p, 'neu', `${name(ichId)} hat eine Aufgabe für ${gruppe ? 'euch' : 'dich'}: ${a.titel}`,
           wann + (gruppe ? `. Zusammen mit ${aufz(dabei.filter(x => x !== p).map(name))}.` : '') + (!ohne ? '' : gruppe ? ' Ohne Punkte.' : ', ohne Punkte'), 'aufgabe:' + neu.id);
       }
     },
-    async aufgabeErledigen(id, foto) {
+    async aufgabeErledigen(id, fotos) {
       await warte();
       const a = finde(id);
       if (!a.fuer && a.fuer_alle && a.status === 'offen') a.fuer = ichId;
       if (a.fuer !== ichId) nein(a.fuer_alle ? 'Da war jemand schneller' : 'Das ist nicht deine Aufgabe');
       if (a.status !== 'offen') nein(a.gruppe ? 'Das hat schon jemand von euch abgehakt' : 'Die Aufgabe ist nicht mehr offen');
+      const foto = fotos && fotos[0];
+      if (fotos && fotos.length > 12) nein('Das sind zu viele Fotos. Mehr als 12 gehen nicht.');
       if (a.foto_pflicht && !foto && !a.foto_pfad) nein('Für diese Aufgabe ist ein Foto nötig');
       // Auch Eltern warten auf das andere Elternteil. Nur wer allein erzieht, ist sofort fertig.
       const sofort = a.art === 'irgendwann' || (eltern() && !M.some(m => m.rolle === 'eltern' && m.id !== ichId));
       for (const x of runde(a).filter(x => x.id === a.id || x.status === 'offen')) {
         x.hinweis = null; x.erledigt_am = jetzt(); x.erledigt_von = ichId;
-        if (foto) x.foto_pfad = foto;
+        if (foto) { x.foto_pfad = foto; x.weitere_fotos = fotos.length > 1 ? fotos.slice(1) : null; }
         x.status = sofort ? 'erledigt' : 'wartet';
         if (sofort && wert(x)) punkt(x.fuer, wert(x), 'erledigt', x.titel);
       }
       if (sofort) return 'erledigt';
       const mit = runde(a).filter(x => x.id !== a.id).map(x => name(x.fuer));
-      anEltern(ichId, 'erledigt', `${name(ichId)} hat erledigt: ${a.titel}`, (mit.length ? `Zusammen mit ${aufz(mit)}. ` : '') + 'Tippe, um zu bestätigen.', 'aufgabe:' + a.id);
+      anEltern(ichId, 'erledigt', `${name(ichId)} hat erledigt: ${a.titel}`, (mit.length ? `Zusammen mit ${aufz(mit)}. ` : '') + (foto && fotos.length > 1 ? `Mit ${fotos.length} Fotos. ` : foto || a.foto_pfad ? 'Mit Foto. ' : '') + 'Tippe, um zu bestätigen.', 'aufgabe:' + a.id);
       return 'wartet';
     },
     async aufgabeWiederoeffnen(id) {
@@ -313,7 +317,7 @@ export function demoBackend() {
     async einkaufNeu(k) {
       await warte();
       if (k.status === 'liste' && !eltern()) nein('Das darfst du nicht');
-      KAUF.push({ id: neuId(), titel: k.titel, menge: k.menge || '', status: k.status, von: ichId, grund: null, foto_pfad: k.foto_pfad || null });
+      KAUF.push({ id: neuId(), titel: k.titel, menge: k.menge || '', status: k.status, von: ichId, grund: null, foto_pfad: (k.fotos && k.fotos[0]) || null, weitere_fotos: k.fotos && k.fotos.length > 1 ? k.fotos.slice(1) : null });
       if (k.status === 'vorschlag') anEltern(ichId, 'einkauf', `${name(ichId)} wünscht sich: ${k.titel}`, 'Tippe, um zu entscheiden.', 'einkauf');
     },
     async einkaufSetzen(id, werte) {
@@ -366,6 +370,6 @@ export function demoBackend() {
     async pushSpeichern() {}, async pushWeg() {},
     async postGelesen() { if (POST[ichId]) POST[ichId].length = 0; },
     async fotoHoch(eimer, blob) { return URL.createObjectURL(blob); },
-    async fotoUrl(pfad) { return pfad; },
+    async fotoUrls(pfade) { await warte(); return [...pfade]; },
   };
 }

@@ -4,7 +4,7 @@
 import { S, P, ich, eltern, leer, runde, buendeln, darfPruefen, andereEltern } from './zustand.js';
 import { render, zeichne, geh, melde, konfetti, klang, toeneAn, toeneSetzen } from './kern.js';
 import { termineAm, feierPlan } from './ansichten.js';
-import { heute, plus, iso, euro, centAus, PUNKTE, TIERE, FARBEN, wert, aufzaehlen } from './hilfen.js';
+import { esc, heute, plus, iso, euro, centAus, PUNKTE, TIERE, FARBEN, wert, aufzaehlen, MAX_FOTOS, fotosVon, KREUZ } from './hilfen.js';
 
 export const A = {};
 let B = null;                      // die Verbindung (backend.js oder demo.js)
@@ -173,7 +173,7 @@ async function rein() {
 function nachDraussen() {
   bereit = false;
   if (S.feier) clearTimeout(S.feier.uhr);
-  S.ich = null; S.d = leer(); S.roh = ''; S.sheet = null; S.feier = null; S.kaufOft = []; S.kaufBild = null; S.phase = 'tor';
+  S.ich = null; S.d = leer(); S.roh = ''; S.sheet = null; S.feier = null; S.kaufOft = []; S.kaufBilder = []; S.phase = 'tor';
   spaeter = []; spaeterMerken();
   if (S.imLaden) { S.imLaden = false; wachBleiben(false); }
   symbol();
@@ -291,14 +291,16 @@ A.blattUm = k => { if (S.sheet) { S.sheet[k] = !S.sheet[k]; render(); } };
 
 // ---------- Fotos: wählen, verkleinern
 
-function dateiWaehlen(kamera) {
+// Mit der Kamera gibt es ein Foto nach dem anderen. Aus der Mediathek lassen sich gleich mehrere antippen.
+function dateienWaehlen(kamera, mehrere) {
   return new Promise(fertig => {
     const i = document.createElement('input');
     i.type = 'file'; i.accept = 'image/*'; i.style.display = 'none';
     if (kamera) i.capture = 'environment';
+    else if (mehrere) i.multiple = true;
     document.body.appendChild(i);
-    i.addEventListener('change', () => { const f = i.files && i.files[0]; i.remove(); fertig(f || null); });
-    i.addEventListener('cancel', () => { i.remove(); fertig(null); });
+    i.addEventListener('change', () => { const f = [...(i.files || [])]; i.remove(); fertig(f); });
+    i.addEventListener('cancel', () => { i.remove(); fertig([]); });
     i.click();
   });
 }
@@ -324,26 +326,77 @@ async function verkleinern(datei, max, quadrat) {
 }
 
 async function bildWaehlen(kamera, max, quadrat) {
-  const datei = await dateiWaehlen(kamera);
+  const [datei] = await dateienWaehlen(kamera, false);
   if (!datei) return null;
   try { return await verkleinern(datei, max, quadrat); }
   catch (e) { melde(e.message); return null; }
 }
 
+// ---------- Mehrere Fotos sammeln (beim Abhaken, bei freiwilligen Aufgaben, am Einkauf)
+// Eine Sammlung ist eine Liste aus { blob, url }. Sie hängt am offenen Blatt oder, in der Einkaufsliste, am Entwurf.
+async function bilderWaehlen(kamera, max, platz) {
+  const dateien = await dateienWaehlen(kamera, platz > 1);
+  if (dateien.length > platz) melde(`Mehr als ${MAX_FOTOS} Fotos gehen nicht`);
+  const bilder = [];
+  for (const d of dateien.slice(0, platz)) {
+    try { const blob = await verkleinern(d, max, false); bilder.push({ blob, url: URL.createObjectURL(blob) }); }
+    catch (e) { melde(e.message); }
+  }
+  return bilder;
+}
+const hochladen = bilder => Promise.all(bilder.map(b => B.fotoHoch('beweise', b.blob, S.ich)));
+const sammlung = () => S.sheet ? S.sheet.bilder : S.tab === 'einkauf' ? S.kaufBilder : null;
+
+A.fotoDazu = async () => {
+  const blatt = S.sheet, liste = sammlung();
+  if (!liste) return;
+  if (liste.length >= MAX_FOTOS) return melde(`Mehr als ${MAX_FOTOS} Fotos gehen nicht`);
+  // Der Beweis beim Abhaken kommt frisch aus der Kamera, alles andere auch aus der Mediathek.
+  const neu = await bilderWaehlen(!!blatt && blatt.k === 'fotos', blatt ? 1600 : 1400, MAX_FOTOS - liste.length);
+  if (S.sheet !== blatt) return neu.forEach(b => URL.revokeObjectURL(b.url));     // inzwischen geschlossen
+  liste.push(...neu);
+  return blatt ? render() : zeichne();
+};
+A.fotoWeg = i => {
+  const liste = sammlung();
+  if (!liste || !liste[i]) return;
+  URL.revokeObjectURL(liste.splice(i, 1)[0].url);
+  return S.sheet ? render() : zeichne();
+};
+
+// Fotos groß ansehen: über die ganze Seite, zur Seite wischen, mit zwei Fingern vergrößern. Antippen schließt.
+A.gross = i => {
+  const urls = S.sheet && S.sheet.fotos;
+  if (!urls || !urls.length) return;
+  const el = document.createElement('div'), n = urls.length;
+  el.className = 'lupe';
+  el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', n > 1 ? `${n} Fotos` : 'Foto');
+  el.innerHTML = `<div class="rolle">${urls.map((u, k) => `<img src="${esc(u)}" alt="Foto ${k + 1} von ${n}">`).join('')}</div>
+    ${n > 1 ? `<span class="zaehler">${i + 1} von ${n}</span>` : ''}<button class="zu" aria-label="Schließen">${KREUZ}</button>`;
+  const rolle = el.firstChild, zaehler = el.querySelector('.zaehler');
+  const zu = () => { document.removeEventListener('keydown', taste); el.remove(); };
+  const taste = e => { if (e.key === 'Escape') zu(); };
+  el.addEventListener('click', zu);
+  document.addEventListener('keydown', taste);
+  if (zaehler) rolle.addEventListener('scroll', () => { zaehler.textContent = `${Math.min(n, Math.round(rolle.scrollLeft / rolle.clientWidth) + 1)} von ${n}`; }, { passive: true });
+  document.body.appendChild(el);
+  rolle.scrollLeft = i * rolle.clientWidth;
+};
+
 // ------------------------------------------------------------ Aufgaben
 
 // Abhaken. Aufgaben ohne Datum sind sofort erledigt, alles andere wartet auf ein Elternteil. Das gilt auch für Eltern:
 // Dann bestätigt das andere Elternteil. Eine gemeinsame Aufgabe ist mit einem Haken für alle abgehakt.
-function erledige(a, foto) {
+function erledige(a, fotos) {
   const sofort = a.art === 'irgendwann' || (eltern() && !andereEltern().length), p = wert(a);
-  return tun(() => B.aufgabeErledigen(a.id, foto), {
+  return tun(() => B.aufgabeErledigen(a.id, fotos), {
     zu: true,
     lokal: () => {
       if (!a.fuer) a.fuer = S.ich;                       // eine Aufgabe für alle gehört jetzt mir
       for (const x of runde(a).filter(x => x.id === a.id || x.status === 'offen')) {
         x.status = sofort ? 'erledigt' : 'wartet';
         x.hinweis = null; x.erledigt_von = S.ich;
-        if (foto) x.foto_pfad = foto;
+        if (fotos) { x.foto_pfad = fotos[0]; x.weitere_fotos = fotos.length > 1 ? fotos.slice(1) : null; }   // neue Fotos ersetzen die alten
         if (sofort && wert(x)) punkteLokal(x.fuer, wert(x));
       }
       eben(a.id);
@@ -381,14 +434,24 @@ A.abhaken = id => {
   }
 };
 
+// Abhaken mit Foto: erst die Kamera, dann ein Blatt mit dem Foto. Dort kommen weitere dazu (z. B. jede Seite der Hausaufgaben).
 A.mitFoto = async id => {
   const a = aufgabe(id);
   if (!a) return;
-  const bild = await bildWaehlen(true, 1600, false);
-  if (!bild) return;
-  melde('Foto wird hochgeladen …');
-  try { await erledige(a, await B.fotoHoch('beweise', bild, S.ich)); }
-  catch (e) { melde(e.message); }
+  const bilder = await bilderWaehlen(true, 1600, 1);
+  if (!bilder.length) return;
+  return geh({ sheet: { k: 'fotos', id, bilder, laedt: false } });
+};
+A.fotosAb = async () => {
+  const s = S.sheet, a = s && s.k === 'fotos' && aufgabe(s.id);
+  if (!a || s.laedt || !s.bilder.length) return;
+  s.laedt = true; render();
+  let pfade;
+  try { pfade = await hochladen(s.bilder); }
+  catch (e) { s.laedt = false; render(); return melde(e.message || 'Die Fotos ließen sich nicht hochladen'); }
+  s.laedt = false;
+  if (S.sheet !== s) return;                                        // inzwischen geschlossen
+  return erledige(a, pfade);
 };
 
 A.bestaetige = (id, punkte) => {
@@ -448,9 +511,9 @@ A.loeschAufgabe = id => {
 A.auf = id => {
   const a = aufgabe(id);
   if (!a) return;
-  const blatt = S.sheet = { k: 'aufgabe', id, foto: null };
+  const blatt = S.sheet = { k: 'aufgabe', id, fotos: null }, pfade = fotosVon(a);
   render();
-  if (a.foto_pfad) B.fotoUrl(a.foto_pfad).then(u => { if (S.sheet === blatt) { blatt.foto = u; render(); } }).catch(() => {});
+  if (pfade.length) B.fotoUrls(pfade).then(u => { if (S.sheet === blatt) { blatt.fotos = u; render(); } }).catch(() => {});
 };
 
 function ladeVorschlaege() {
@@ -607,34 +670,20 @@ A.sprich = id => {
   catch { hoerer = null; tastatur('Tippe auf das Mikrofon unten auf der Tastatur'); }
 };
 
-A.freiAuf = () => geh({ sheet: { k: 'frei', t: '', bild: null, bildUrl: null, laedt: false } });
-A.freiFoto = async () => {                                         // aus der Mediathek oder frisch aufgenommen
-  const blatt = S.sheet, bild = await bildWaehlen(false, 1600, false);
-  if (!bild || S.sheet !== blatt) return;
-  if (blatt.bildUrl) URL.revokeObjectURL(blatt.bildUrl);
-  blatt.bild = bild; blatt.bildUrl = URL.createObjectURL(bild);
-  render();
-};
-A.freiFotoWeg = () => {
-  const s = S.sheet;
-  if (!s || !s.bildUrl) return;
-  URL.revokeObjectURL(s.bildUrl);
-  s.bild = null; s.bildUrl = null;
-  render();
-};
+A.freiAuf = () => geh({ sheet: { k: 'frei', t: '', bilder: [], laedt: false } });
 A.neuFrei = async () => {
   const s = S.sheet, titel = (s.t || '').trim();
   if (!titel) return melde('Schreib kurz, was du gemacht hast');
   if (s.laedt) return;
-  let foto = null;
-  if (s.bild) {
+  let fotos = [];
+  if (s.bilder.length) {
     s.laedt = true; render();
-    try { foto = await B.fotoHoch('beweise', s.bild, S.ich); }
-    catch (e) { s.laedt = false; render(); return melde(e.message || 'Das Foto ließ sich nicht hochladen'); }
+    try { fotos = await hochladen(s.bilder); }
+    catch (e) { s.laedt = false; render(); return melde(e.message || 'Die Fotos ließen sich nicht hochladen'); }
     s.laedt = false;
     if (S.sheet !== s) return;                                      // inzwischen geschlossen
   }
-  return tun(() => B.aufgabeAnlegen({ titel, art: 'frei', fuer: S.ich, foto }), { zu: true, ok: 'Eingetragen. Wartet auf Bestätigung.' });
+  return tun(() => B.aufgabeAnlegen({ titel, art: 'frei', fuer: S.ich, fotos }), { zu: true, ok: 'Eingetragen. Wartet auf Bestätigung.' });
 };
 
 A.jokerAuf = () => {
@@ -724,35 +773,29 @@ A.kaufAufraeumen = () => {
 };
 
 A.kaufNeu = async () => {
-  const titel = (S.kaufT || '').trim(), menge = (S.kaufM || '').trim(), bild = S.kaufBild;
-  if (!titel) return bild ? melde('Schreib dazu, was es ist') : undefined;
+  const titel = (S.kaufT || '').trim(), menge = (S.kaufM || '').trim(), bilder = S.kaufBilder;
+  if (!titel) return bilder.length ? melde('Schreib dazu, was es ist') : undefined;
   const status = eltern() ? 'liste' : 'vorschlag';
-  S.kaufT = S.kaufM = ''; S.kaufBild = null;
+  S.kaufT = S.kaufM = ''; S.kaufBilder = [];
   for (const id of ['kauf', 'menge']) { const feld = document.getElementById(id); if (feld) feld.value = ''; }
-  let foto_pfad = null;
-  if (bild) {
-    melde('Foto wird hochgeladen …');
-    try { foto_pfad = await B.fotoHoch('beweise', bild, S.ich); }
-    catch (e) { S.kaufT = titel; S.kaufM = menge; S.kaufBild = bild; zeichne(); return melde(e.message || 'Das Foto ließ sich nicht hochladen'); }
+  let fotos = [];
+  if (bilder.length) {
+    zeichne();
+    melde(bilder.length > 1 ? 'Fotos werden hochgeladen …' : 'Foto wird hochgeladen …');
+    try { fotos = await hochladen(bilder); }
+    catch (e) { S.kaufT = titel; S.kaufM = menge; S.kaufBilder = bilder; zeichne(); return melde(e.message || 'Die Fotos ließen sich nicht hochladen'); }
   }
-  return tun(() => B.einkaufNeu({ titel, menge, status, von: S.ich, foto_pfad }), {
+  return tun(() => B.einkaufNeu({ titel, menge, status, von: S.ich, fotos }), {
     ok: eltern() ? 'Auf die Liste gesetzt' : 'Vorgeschlagen',
-    lokal: () => { S.d.einkauf.push({ id: 'neu' + Date.now(), titel, menge, status, von: S.ich, grund: null, foto_pfad }); },
+    lokal: () => { S.d.einkauf.push({ id: 'neu' + Date.now(), titel, menge, status, von: S.ich, grund: null, foto_pfad: fotos[0] || null, weitere_fotos: fotos.length > 1 ? fotos.slice(1) : null }); },
   });
 };
-A.kaufFoto = async () => {
-  const bild = await bildWaehlen(false, 1400, false);
-  if (!bild) return;
-  S.kaufBild = bild;
-  zeichne();
-};
-A.kaufFotoWeg = () => { S.kaufBild = null; zeichne(); };
 A.kaufBild = id => {
   const k = kauf(id);
   if (!k || !k.foto_pfad) return;
-  const blatt = S.sheet = { k: 'kbild', id, url: null };
+  const blatt = S.sheet = { k: 'kbild', id, fotos: null };
   render();
-  B.fotoUrl(k.foto_pfad).then(u => { if (S.sheet === blatt) { blatt.url = u; render(); } }).catch(() => { if (S.sheet === blatt) melde('Das Foto ließ sich nicht laden'); });
+  B.fotoUrls(fotosVon(k)).then(u => { if (S.sheet === blatt) { blatt.fotos = u; render(); } }).catch(() => { if (S.sheet === blatt) melde('Das Foto ließ sich nicht laden'); });
 };
 
 // ---------- Im Laden: große Liste, Bildschirm bleibt an, die anderen bekommen Bescheid

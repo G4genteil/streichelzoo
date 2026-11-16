@@ -30,7 +30,7 @@ export const S = {
   frischTab: 0,
   push: 'unbekannt',       // an | aus | gesperrt | geht-nicht (auf diesem Gerät)
   imLaden: false,          // Einkaufsliste in der großen Ansicht für den Laden
-  kaufBild: null,          // Foto, das am nächsten Einkaufs-Eintrag hängen soll
+  kaufBilder: [],          // Fotos, die am nächsten Einkaufs-Eintrag hängen sollen: [{ blob, url }]
   hoert: false,            // läuft gerade die Spracheingabe?
   kaufOft: [],             // was die Familie oft kauft, für die Vorschläge beim Tippen
   wartetAufNetz: 0,        // so viele Haken der Einkaufsliste sind gemerkt und noch nicht übertragen

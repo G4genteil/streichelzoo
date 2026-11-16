@@ -54,6 +54,11 @@ export const ABZUG = { tag: 3, woche: 15 };
 // So viele Punkte bringt eine Aufgabe. Selbstverständliches kann ohne Punkte eingetragen sein.
 export const wert = a => a.ohne_punkte ? 0 : (PUNKTE[a.art] || 0);
 // "Leon", "Leon und Linus", "Leon, Linus und Stefan"
+// Fotos: Das erste steht in foto_pfad, alle weiteren in weitere_fotos (braucht 10_fotos.sql).
+export const MAX_FOTOS = 12;
+export const fotosVon = x => [x.foto_pfad, ...(x.weitere_fotos || [])].filter(Boolean);
+export const fotoText = n => n === 1 ? 'Foto' : `${n} Fotos`;
+export const KREUZ = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>';
 export const aufzaehlen = l => l.length < 2 ? (l[0] || '') : l.slice(0, -1).join(', ') + ' und ' + l[l.length - 1];
 
 export const TIERE = ['🐑', '🐐', '🦙', '🐇', '🐖', '🐴', '🦆', '🐓', '🐄', '🦔', '🐈', '🐕', '🦁', '🦉', '🐢', '🦊', '🐿️'];
