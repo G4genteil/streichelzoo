@@ -6,7 +6,9 @@ import { toeneAn } from './kern.js';
 import {
   esc, euro, heute, plus, montag, tagVon, iso, wocheEnde, fmtLang, fmtKurz, fmtDatum, fmtMonat, fmtZeit,
   wochentagKurz, relTag, relKurz, fmtTag, PUNKTE, ABZUG, wert, aufzaehlen, MAX_FOTOS, fotosVon, fotoText, KREUZ, POKAL, TIERE, FARBEN, WOCHENTAGE, HAKEN, MIKRO, KAMERA, FLAMME, LOB, ALLE, ICON, TABS,
+  SELTEN, FUTTER, HERZ, zahl,
 } from './hilfen.js';
+import { ZOO_TIERE, ZOO_RASTER, ZOO_OBEN } from './zoo_katalog.js';
 
 // ------------------------------------------------------------ Bausteine
 
@@ -29,7 +31,7 @@ export const tier = (m, g = '') => `<span class="tier ${g}" style="--c:${esc(m.f
 const liste = (zeilen, leer = '') =>
   `<div class="liste">${zeilen.length ? zeilen.join('') : `<div class="leer">${leer}</div>`}</div>`;
 
-const schalter = (key, opts) => `<div class="schalter">${opts.map(([v, l]) =>
+const schalter = (key, opts) => `<div class="schalter ${opts.length > 3 ? 'vier' : ''}">${opts.map(([v, l]) =>
   `<button class="${S[key] === v ? 'an' : ''}" onclick="A.geh({${key}:'${v}'})">${l}</button>`).join('')}</div>`;
 
 const blattSchalter = (key, opts) => `<div class="schalter im-blatt">${opts.map(([v, l]) =>
@@ -358,10 +360,78 @@ function vKalender() {
     ${danach.length ? `<h2>Danach</h2>` + liste(danach.map(([t, e]) => terminZeile(e, t))) : ''}`;
 }
 
-// ------------------------------------------------------------ Familie: Bestenliste, Sparen, Dran denken
+
+// ------------------------------------------------------------ Zoo
+// Jede Zelle besteht aus drei Bildern übereinander (Boden, Gehege, Tier), alle mit derselben Kamera gerendert
+// (blender/zoo_app_render.py). Die Zellen liegen im Zickzack: eine in der Mitte, dann zwei nebeneinander, und so weiter.
+
+const zooTier = id => ZOO_TIERE.find(t => t.id === id);
+const zellPlatz = n => { const k = Math.floor(n / 3), r = n % 3; return r === 0 ? [0, 2 * k] : [r === 1 ? -1 : 1, 2 * k + 1]; };
+const genitiv = name => /[sßxz]$/i.test(name) ? name + '’' : name + 's';
+const ZIEL_ZEICHEN = { flamme: FLAMME, woche: POKAL };
+
+function zielStand(t, st) {
+  const [art, soll] = t.ziel.split('_');
+  const ist = { flamme: st.flamme, woche: st.siege, aufgaben: st.aufgaben, perfekt: st.perfekt, familie: st.familie }[art] || 0;
+  return { art, ist: Math.min(ist, Number(soll)), soll: Number(soll) };
+}
+
+function zooBild(tiere, wer, eigen, muede) {
+  let n = Math.max(3, tiere.length + (eigen ? 1 : 0));
+  if (n % 3 === 2) n++;                                    // eine angefangene Doppelreihe auffüllen
+  const R = ZOO_RASTER, B = R.bild, dx = R.x[0], dy = R.x[1];
+  // Oben beginnt der Zoo mit dem höchsten Ding (Baum, Giraffe), nicht mit leerem Himmel.
+  const teile = i => { const k = tiere[i] && zooTier(tiere[i].tier);
+    return k ? ['grund', 'lebensraum/' + k.lebensraum, 'tier/' + k.id] : eigen && i === tiere.length ? ['grund', 'bauplatz'] : ['grund']; };
+  let rand = B;
+  for (let i = 0; i < n; i++) for (const t of teile(i)) rand = Math.min(rand, zellPlatz(i)[1] * dy + (ZOO_OBEN[t] ?? 0) - 8);
+  const W = 2 * dx + B, H = zellPlatz(n - 1)[1] * dy + B - rand;
+  const pz = (v, g) => (v / g * 100).toFixed(3) + '%';
+  let bilder = '', knoepfe = '';
+  for (let i = 0; i < n; i++) {
+    const [u, v] = zellPlatz(i), x = dx + u * dx, y = v * dy - rand;
+    const lage = `left:${pz(x, W)};top:${pz(y, H)};width:${pz(B, W)}`;
+    const ebene = (src, klasse = '', extra = '') => `<img class="zoo-ebene ${klasse}" src="${src}" alt="" style="${lage}${extra}" loading="lazy" decoding="async">`;
+    const e = tiere[i], k = e && zooTier(e.tier);
+    bilder += ebene('zoo/grund.webp');
+    const feld = (aufruf, label) => { knoepfe += `<button class="zoo-feld" style="left:${pz(x + R.mitte[0], W)};top:${pz(y + R.mitte[1] - dy * 0.3, H)};width:${pz(dx * 1.15, W)};height:${pz(dy * 1.5, H)}" onclick="${aufruf}" aria-label="${label}"></button>`; };
+    if (k) {
+      bilder += ebene(`zoo/lebensraum/${k.lebensraum}.webp`);
+      bilder += ebene(`zoo/tier/${k.id}.webp`, `zoo-tier ${muede ? 'muede' : ''} ${frisch('zoo-' + k.id) ? 'neu' : ''}`, `;--n:${i}`);
+      feld(`A.zooTierAuf('${k.id}','${wer}')`, esc(k.name));
+    } else if (eigen && i === tiere.length) {
+      bilder += ebene('zoo/bauplatz.webp');
+      feld('A.zooLaden()', 'Neues Tier holen');
+    }
+  }
+  return `<div class="zoo" style="aspect-ratio:${W.toFixed(1)}/${H.toFixed(1)}">${bilder}${knoepfe}</div>`;
+}
+
+function vZoo() {
+  const z = S.d.zoo;
+  if (!z) return `<div class="leer">Der Zoo braucht noch ein Update in Supabase (Datei 11).</div>`;
+  const wer = S.d.mitglieder.some(m => m.id === S.zooVon) ? S.zooVon : S.ich, eigen = wer === S.ich, m = P(wer);
+  const st = z.stand.find(x => x.mitglied_id === wer) || {};
+  const tiere = z.tiere.filter(t => t.mitglied_id === wer);
+  const wahl = [...S.d.mitglieder].sort((a, b) => (b.id === S.ich) - (a.id === S.ich)).map(x => `<button class="chip ${x.id === wer ? 'an' : ''}" style="--c:${esc(x.farbe)}" onclick="A.zooVon('${x.id}')">${tier(x, 'klein')}${x.id === S.ich ? 'Mein Zoo' : esc(x.name)}</button>`).join('');
+  const knopf = eigen ? `<button class="knopf" onclick="A.zooLaden()">Neues Tier holen</button>`
+    : st.herz_heute ? `<button class="knopf still" disabled>${HERZ} Herz dagelassen</button>`
+    : `<button class="knopf" onclick="A.zooHerz('${wer}')">${HERZ} Herz dalassen</button>`;
+  return `<div class="chips zoo-wahl">${wahl}</div>
+    <div class="zoo-zahlen">${eigen ? `<div><b>${FUTTER}${zahl(st.futter)}</b><span>Futter</span></div>` : ''}
+      <div><b>${tiere.length}</b><span>von ${ZOO_TIERE.length} Tieren</span></div>
+      <div><b>${HERZ}${zahl(st.herzen)}</b><span>${st.herzen === 1 ? 'Herz' : 'Herzen'}</span></div></div>
+    ${st.muede ? `<p class="zoo-muede">${eigen ? 'Deine Tiere sind müde. Erledige heute deine Aufgaben, dann geht es ihnen wieder gut.' : `${esc(genitiv(m.name))} Tiere sind heute müde.`}</p>` : ''}
+    ${zooBild(tiere, wer, eigen, st.muede)}
+    <div class="knoepfe">${knopf}</div>`;
+}
+
+// ------------------------------------------------------------ Familie: Zoo, Bestenliste, Sparen, Dran denken
 
 function vFamilie() {
-  let s = `<div class="kopf"><h1>Familie</h1></div>` + schalter('fam', [['best', 'Bestenliste'], ['spar', 'Sparen'], ['merk', 'Dran denken']]);
+  let s = `<div class="kopf"><h1>Familie</h1></div>` + schalter('fam', [['zoo', 'Zoo'], ['best', 'Bestenliste'], ['spar', 'Sparen'], ['merk', 'Dran denken']]);
+
+  if (S.fam === 'zoo') s += vZoo();
 
   if (S.fam === 'best') {
     const feld = S.bestArt === 'woche' ? 'woche' : 'gesamt';
@@ -592,7 +662,7 @@ function bEinst() {
   const arten = [['neu', 'Neue Aufgabe für dich'], ['bestaetigt', 'Deine Aufgabe wurde bestätigt'], ['verpasst', 'Aufgabe verpasst'],
     ...(eltern() ? [['erledigt', 'Jemand hat eine Aufgabe erledigt'], ['einkauf', 'Neuer Vorschlag für die Einkaufsliste']]
       : [['einkauf', 'Antwort auf deinen Einkaufsvorschlag']]),
-    ['erinnerung', 'Erinnerung an offene Aufgaben'], ['woche', 'Wochenabschluss'], ['joker', 'Joker'], ['termine', 'Termine'], ['merk', 'Dran denken'], ['sparen', 'Sparschweine']];
+    ['erinnerung', 'Erinnerung an offene Aufgaben'], ['woche', 'Wochenabschluss'], ['joker', 'Joker'], ['termine', 'Termine'], ['merk', 'Dran denken'], ['sparen', 'Sparschweine'], ['zoo', 'Zoo: neue Tiere und Herzen']];
   const abend = Number((m.mitteilungen || {}).abend) || 18;
   return `<div class="blatt-kopf">${tier(m, 'gross')}<div><h3>${esc(m.name)}</h3><p class="unter">${eltern() ? 'Elternteil' : 'Kind'}</p></div></div>
     <p class="klein-titel">Dein Tier</p>${tierWahl(m.tier, !!m.bild_pfad, 'A.setzTier', 'A.setzFoto')}
@@ -697,9 +767,51 @@ function bKaufBild(s) {
     ${galerie(s.fotos, k ? fotosVon(k).length : 1, 'Foto zum Einkauf')}`;
 }
 
+
+function zooKarte(t, hat, st) {
+  let unten;
+  if (hat) unten = `<span class="zoo-preis hat">${HAKEN}Im Zoo</span>`;
+  else if (t.futter) unten = `<span class="zoo-preis ${st.futter >= t.futter ? '' : 'fehlt'}">${FUTTER}${zahl(t.futter)}</span>`;
+  else { const z = zielStand(t, st); unten = `<span class="zoo-preis ziel">${ZIEL_ZEICHEN[z.art] || HAKEN}${z.ist} von ${z.soll}</span>`; }
+  return `<button class="zoo-karte ${t.seltenheit} ${hat ? 'hat' : ''}" onclick="A.zooTierAuf('${t.id}')"><img src="zoo/bild/${t.id}.webp" alt="" loading="lazy" decoding="async">
+    <span class="name">${esc(t.name)}</span>${unten}</button>`;
+}
+
+function bZooLaden() {
+  const z = S.d.zoo, st = z.stand.find(x => x.mitglied_id === S.ich) || {};
+  const hab = new Set(z.tiere.filter(t => t.mitglied_id === S.ich).map(t => t.tier));
+  const gruppen = Object.keys(SELTEN).map(sel => `<p class="klein-titel">${SELTEN[sel]}${sel === 'legendaer' ? ', nur durch Fleiß' : ''}</p>
+    <div class="zoo-laden">${ZOO_TIERE.filter(t => t.seltenheit === sel).map(t => zooKarte(t, hab.has(t.id), st)).join('')}</div>`).join('');
+  return `<h3>Neues Tier holen</h3><p class="unter">${FUTTER} ${zahl(st.futter)} Futter. Jeder bestätigte Punkt bringt 10.</p>${gruppen}`;
+}
+
+function bZooTier(s) {
+  const t = zooTier(s.id), z = S.d.zoo, wer = s.wer || S.ich, eigen = wer === S.ich;
+  const st = z.stand.find(x => x.mitglied_id === S.ich) || {};
+  const da = z.tiere.find(x => x.mitglied_id === wer && x.tier === s.id);
+  let mehr = '';
+  if (da) {
+    const wie = da.wie === 'start' ? 'Das erste Tier im Zoo' : da.wie === 'verdient' ? `Verdient: ${esc(t.ziel_text)}` : `Für ${zahl(da.futter)} Futter geholt`;
+    mehr = `<div class="liste"><div class="zeile"><span class="mitte"><span class="titel">${eigen ? 'Eingezogen' : `Wohnt bei ${esc(P(wer).name)}`}</span>
+      <span class="info">${relKurz(da.am)}</span><span class="info">${wie}</span></span></div></div>`;
+  } else if (t.futter) {
+    const fehlt = t.futter - (st.futter || 0);
+    mehr = `<p class="zoo-text">${fehlt > 0 ? `Dir fehlen noch ${zahl(fehlt)} Futter.` : `Du hast ${zahl(st.futter)} Futter.`}</p>
+      <div class="abstand"><button class="knopf" ${fehlt > 0 ? 'disabled' : ''} onclick="A.zooKaufen('${t.id}')">Für ${zahl(t.futter)} Futter holen</button></div>`;
+  } else {
+    const ziel = zielStand(t, st);
+    mehr = `<p class="klein-titel">Nur durch Fleiß</p><div class="liste"><div class="zeile"><span class="mitte"><span class="titel">${esc(t.ziel_text)}</span>
+      <span class="balken voll"><i style="width:${(ziel.ist / ziel.soll * 100).toFixed(1)}%"></i></span></span><span class="zahl">${ziel.ist} von ${ziel.soll}</span></div></div>
+      <p class="hinweis">Es zieht von selbst ein, sobald du es geschafft hast.</p>`;
+  }
+  return `<img class="zoo-portrait" src="zoo/bild/${t.id}.webp" alt="${esc(t.name)}"><h3 class="mittig">${esc(t.name)}</h3>
+    <p class="mittig"><span class="marke ${t.seltenheit}">${SELTEN[t.seltenheit]}</span></p>${mehr}`;
+}
+
 const BLATT = {
   aufgabe: bAufgabe, neu: bNeu, frei: bFrei, joker: bJoker, schwein: bSchwein, neuschwein: bNeuSchwein, einst: bEinst,
   code: bCode, termin: bTermin, merk: bMerk, nein: bNein, kauf: bKauf, verlauf: bVerlauf, serie: bSerie, zurueck: bZurueck, kbild: bKaufBild, fotos: bFotos, aendern: bAendern, saendern: bSerieAendern,
+  zooladen: bZooLaden, zootier: bZooTier,
 };
 
 const vBlatt = () => `<div class="schleier" onclick="if(event.target===this)A.zu()"><div class="blatt" role="dialog" aria-modal="true">

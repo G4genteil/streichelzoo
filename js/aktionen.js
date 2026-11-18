@@ -5,6 +5,7 @@ import { S, P, ich, eltern, leer, runde, buendeln, darfPruefen, andereEltern } f
 import { render, zeichne, geh, melde, konfetti, klang, toeneAn, toeneSetzen } from './kern.js';
 import { termineAm, feierPlan } from './ansichten.js';
 import { esc, heute, plus, iso, euro, centAus, PUNKTE, TIERE, FARBEN, wert, aufzaehlen, MAX_FOTOS, fotosVon, KREUZ } from './hilfen.js';
+import { ZOO_TIERE } from './zoo_katalog.js';
 
 export const A = {};
 let B = null;                      // die Verbindung (backend.js oder demo.js)
@@ -974,11 +975,38 @@ A.ibanKopieren = async () => {
   catch { melde('Kopieren geht hier nicht. Tipp die IBAN bitte ab.'); }
 };
 
+// ------------------------------------------------------------ Zoo
+
+const zooStand = () => (S.d.zoo && S.d.zoo.stand.find(x => x.mitglied_id === S.ich)) || null;
+A.zooVon = id => geh({ zooVon: id });
+A.zooLaden = () => { if (S.d.zoo) geh({ sheet: { k: 'zooladen' } }); };
+A.zooTierAuf = (id, wer) => geh({ sheet: { k: 'zootier', id, wer: wer || S.ich } });
+A.zooKaufen = async id => {
+  const t = ZOO_TIERE.find(x => x.id === id), st = zooStand();
+  if (!t || !st) return;
+  const ok = await tun(() => B.zooKaufen(id), { zu: true, ok: `${t.name} ist eingezogen`, lokal: () => {
+    S.d.zoo.tiere.push({ mitglied_id: S.ich, tier: id, wie: 'gekauft', futter: t.futter, am: new Date().toISOString() });
+    st.futter -= t.futter;
+    S.tab = 'familie'; S.fam = 'zoo'; S.zooVon = S.ich;
+    S.frisch = { id: 'zoo-' + id, bis: Date.now() + 1600 };
+  } });
+  if (!ok) return;
+  klang('sieg');
+  konfetti(['#F5B841', '#FFD97A', '#A6D677', '#FFFFFF', ich().farbe]);
+  setTimeout(() => { const neu = document.querySelector('.zoo-tier.neu'); if (neu) neu.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 120);
+};
+A.zooHerz = id => {
+  const st = S.d.zoo && S.d.zoo.stand.find(x => x.mitglied_id === id);
+  if (!st || st.herz_heute) return;
+  klang('haken');
+  return tun(() => B.zooHerz(id), { ok: 'Herz dagelassen', lokal: () => { st.herz_heute = true; st.herzen += 1; } });
+};
+
 // ------------------------------------------------------------ Von einer Nachricht an die richtige Stelle
 
 // ziel kommt aus der Datenbank ('aufgabe:<id>', 'termin:<id>', 'einkauf', ...). Fehlt es, hilft die Art der Nachricht.
 const NACH_ART = { neu: 'aufgaben', erledigt: 'heute', bestaetigt: 'aufgaben', verpasst: 'aufgaben', erinnerung: 'heute',
-  einkauf: 'einkauf', joker: 'heute', termine: 'kalender', merk: 'merk', woche: 'woche' };
+  einkauf: 'einkauf', joker: 'heute', termine: 'kalender', merk: 'merk', woche: 'woche', zoo: 'zoo' };
 
 function zuZiel(ziel, art) {
   if (!bereit || S.phase !== 'app') { offenesZiel = { ziel, art }; return; }
@@ -1003,6 +1031,7 @@ function zuZiel(ziel, art) {
   if (wohin === 'spar') { S.tab = 'familie'; S.fam = 'spar'; return schwein(id) ? A.schweinAuf(id) : render(); }
   if (wohin === 'einkauf') return A.geh({ tab: 'einkauf' });
   if (wohin === 'merk') return geh({ tab: 'familie', fam: 'merk' });
+  if (wohin === 'zoo') return geh({ tab: 'familie', fam: 'zoo', zooVon: S.ich });
   if (wohin === 'kalender') return geh({ tab: 'kalender' });
   if (wohin === 'aufgaben') return geh({ tab: 'aufgaben', seg: 'tag' });
   if (wohin === 'irgendwann') return geh({ tab: 'aufgaben', seg: 'irgendwann' });

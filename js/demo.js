@@ -2,6 +2,7 @@
 // Zum Ausprobieren und zum Testen der Oberfläche, ohne echte Daten anzufassen: index.html?demo
 // Die Regeln sind hier nachgebaut. Maßgeblich sind die in der Datenbank (supabase/01_schema.sql).
 import { heute, plus, wocheEnde, PUNKTE } from './hilfen.js';
+import { ZOO_TIERE } from './zoo_katalog.js';
 
 export function demoBackend() {
   let zaehler = 100, ichId = null;
@@ -91,6 +92,24 @@ export function demoBackend() {
     { mitglied_id: 'm1', punkte: 9, platz: 3, joker: false }, { mitglied_id: 'm2', punkte: -2, platz: 4, joker: false },
     { mitglied_id: 'm3', punkte: 14, platz: 1, joker: true }, { mitglied_id: 'm4', punkte: 11, platz: 2, joker: false }] };
 
+  // Zoo: wie in 11_zoo.sql. Futter = 10 je Pluspunkt minus was die Tiere gekostet haben.
+  const ZOO = [];
+  const zieht = (m, tier, wie, tageHer) => ZOO.push({ mitglied_id: m, tier, wie, futter: wie === 'gekauft' ? ZOO_TIERE.find(t => t.id === tier).futter : 0,
+    am: new Date(Date.now() - tageHer * 864e5).toISOString() });
+  zieht('m1', 'schaf', 'start', 3); zieht('m1', 'huhn', 'gekauft', 2); zieht('m1', 'pfau', 'verdient', 1);
+  zieht('m2', 'alpaka', 'start', 3);
+  zieht('m3', 'ziege', 'start', 3); zieht('m3', 'huhn', 'gekauft', 3); zieht('m3', 'kuh', 'gekauft', 2); zieht('m3', 'pinguin', 'verdient', 2);
+  zieht('m3', 'schwein', 'gekauft', 2); zieht('m3', 'pfau', 'verdient', 1); zieht('m3', 'greif', 'verdient', 1); zieht('m3', 'fuchs', 'gekauft', 0);
+  zieht('m4', 'hase', 'start', 3); zieht('m4', 'katze', 'gekauft', 2); zieht('m4', 'ente', 'gekauft', 1); zieht('m4', 'pfau', 'verdient', 1);
+  const HERZEN = [{ von: 'm1', fuer: 'm3', tag: plus(h, -1) }, { von: 'm4', fuer: 'm3', tag: h }, { von: 'm3', fuer: 'm4', tag: plus(h, -2) }];
+  const ERLEDIGT = { m1: 120, m2: 90, m3: 61, m4: 130 }, PERFEKT = { m1: 2, m2: 0, m3: 3, m4: 1 };
+  const futter = m => Math.max(0, 10 * PKT.filter(p => p.mitglied_id === m && p.wert > 0).reduce((n, p) => n + p.wert, 0)
+    - ZOO.filter(t => t.mitglied_id === m).reduce((n, t) => n + t.futter, 0));
+  const zooStand = () => M.map(m => ({ mitglied_id: m.id, futter: futter(m.id), muede: m.id === 'm2',
+    herzen: HERZEN.filter(x => x.fuer === m.id).length, herz_heute: HERZEN.some(x => x.fuer === m.id && x.von === ichId && x.tag === h),
+    flamme: SERIE[m.id] || 0, siege: SIEGE[m.id] || 0, aufgaben: ERLEDIGT[m.id] || 0, perfekt: PERFEKT[m.id] || 0,
+    familie: Object.values(ERLEDIGT).reduce((a, b) => a + b, 0) }));
+
   const eltern = () => (M.find(m => m.id === ichId) || {}).rolle === 'eltern';
   const name = id => (M.find(m => m.id === id) || {}).name || 'Jemand';
   const stand = s => BUCH.filter(b => b.schwein_id === s).reduce((n, b) => n + b.betrag_cent, 0);
@@ -142,7 +161,7 @@ export function demoBackend() {
         gesamt: PKT.filter(p => p.mitglied_id === m.id).reduce((n, p) => n + p.wert, 0) }));
       return kopie({ mitglieder: M, aufgaben: AUF, best, jokerHeute: JOKER_HEUTE, einkauf: KAUF, termine: TERM, merk: MERK,
         schweine: SCHW.map(s => ({ ...s, stand_cent: stand(s.id) })), post: POST[ichId] || [], info: { iban: 'DE00 0000 0000 0000 0000 00', empfaenger: 'Demo-Konto' },
-        serien: SERIEN, endstand: ENDSTAND });
+        serien: SERIEN, endstand: ENDSTAND, zoo: { tiere: ZOO, stand: zooStand() } });
     },
     beobachten() {}, nichtBeobachten() {},
 
@@ -366,6 +385,24 @@ export function demoBackend() {
     },
     async buchungen(id) { await warte(); return kopie(BUCH.filter(b => b.schwein_id === id).sort((a, b) => b.am.localeCompare(a.am))); },
     async schweinAufbrechen(id) { if (!eltern()) nein('Aufbrechen können nur Eltern'); SCHW = SCHW.filter(s => s.id !== id); },
+
+    async zooKaufen(id) {
+      await warte();
+      const k = ZOO_TIERE.find(t => t.id === id) || nein('Dieses Tier gibt es nicht');
+      if (ZOO.some(t => t.mitglied_id === ichId && t.tier === id)) nein('Das Tier wohnt schon in deinem Zoo');
+      if (!k.futter) nein('Dieses Tier kann man nicht kaufen. Es zieht ein bei: ' + k.ziel_text);
+      if (futter(ichId) < k.futter) nein('Dafür reicht dein Futter noch nicht');
+      ZOO.push({ mitglied_id: ichId, tier: id, wie: 'gekauft', futter: k.futter, am: jetzt() });
+      return { futter: futter(ichId) };
+    },
+    async zooHerz(fuer) {
+      await warte();
+      if (fuer === ichId) nein('In deinen eigenen Zoo kannst du kein Herz legen');
+      if (HERZEN.some(x => x.von === ichId && x.fuer === fuer && x.tag === h)) return false;
+      HERZEN.push({ von: ichId, fuer, tag: h });
+      an(fuer, 'zoo', `${name(ichId)} war in deinem Zoo`, 'Und hat ein Herz dagelassen.', 'zoo');
+      return true;
+    },
 
     async pushSpeichern() {}, async pushWeg() {},
     async postGelesen() { if (POST[ichId]) POST[ichId].length = 0; },

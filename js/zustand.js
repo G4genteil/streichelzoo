@@ -4,6 +4,7 @@ import { heute } from './hilfen.js';
 export const leer = () => ({
   mitglieder: [], aufgaben: [], best: [], jokerHeute: [], einkauf: [], termine: [],
   merk: [], schweine: [], post: [], info: {}, serien: [], endstand: null,
+  zoo: null,               // { tiere: [{ mitglied_id, tier, wie, futter, am }], stand: [...] }, null ohne 11_zoo.sql
 });
 
 export const S = {
@@ -23,7 +24,7 @@ export const S = {
   d: leer(), roh: '',
 
   // Wo bin ich gerade?
-  tab: 'heute', seg: 'tag', fam: 'best', bestArt: 'woche', kal: 'alle', tag: heute(),
+  tab: 'heute', seg: 'tag', fam: 'zoo', zooVon: null, bestArt: 'woche', kal: 'alle', tag: heute(),
   sheet: null,             // offenes Blatt, z. B. { k: 'aufgabe', id }
   kaufT: '', kaufM: '',    // Entwurf in der Einkaufsliste
   frisch: null,            // { id, bis }: gerade abgehakt, für die Haken-Animation

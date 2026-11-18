@@ -451,3 +451,54 @@ html[data-zug=rein]::view-transition-new(seite){animation-name:rein-klein;animat
 .legende .marke{margin:0}
 .legende .marke svg{margin-right:0}
 @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+
+/* ---------- Zoo ---------- */
+.zoo-wahl{margin:2px -16px 12px;padding:0 16px 2px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+.zoo-wahl::-webkit-scrollbar{display:none}
+.zoo-wahl .chip{flex:none}
+.schalter button{white-space:nowrap}
+.schalter.vier button{font-size:13px;padding-inline:2px}
+.zoo-zahlen{display:flex;gap:8px}
+.zoo-zahlen div{flex:1;background:var(--karte);border-radius:16px;padding:10px 12px;display:flex;flex-direction:column;min-width:0}
+.zoo-zahlen b{font-family:var(--rund);font-weight:800;font-size:22px;display:flex;align-items:center;gap:5px;font-variant-numeric:tabular-nums}
+.zoo-zahlen span{font-size:12px;color:var(--leise)}
+svg.futter{width:18px;height:18px;flex:none;fill:#E8545A}
+svg.futter .blatt{fill:#5DB06A}
+svg.herz{width:18px;height:18px;flex:none;fill:#E8547A}
+.knopf svg.herz{fill:currentColor;vertical-align:-3px;margin-right:4px}
+.zoo-muede{background:color-mix(in srgb,var(--warn) 9%,var(--karte));border-radius:14px;padding:10px 14px;font-size:14px;margin-top:8px}
+.zoo{position:relative;margin:6px -16px 0}
+.zoo-ebene{position:absolute;height:auto;pointer-events:none}
+.zoo-feld{position:absolute;transform:translate(-50%,-50%);border-radius:40%}
+.zoo-feld:active{background:radial-gradient(closest-side,rgba(255,255,255,.35),transparent)}
+.zoo-tier{animation:zoo-hops 3.4s ease-in-out infinite;animation-delay:calc(var(--n) * -.83s)}
+@keyframes zoo-hops{0%,72%,100%{transform:translateY(0)}79%{transform:translateY(-1.4%)}86%{transform:translateY(0)}91%{transform:translateY(-.5%)}96%{transform:translateY(0)}}
+.zoo-tier.muede{filter:saturate(.45) brightness(.93);animation:zoo-muede 6s ease-in-out infinite}
+@keyframes zoo-muede{50%{transform:translateY(.4%)}}
+.zoo-tier.neu{animation:zoo-einzug .9s var(--feder) both}
+@keyframes zoo-einzug{from{opacity:0;transform:translateY(-5%) scale(.9)}}
+@media (prefers-reduced-motion: reduce){.zoo-tier,.zoo-tier.muede,.zoo-tier.neu{animation:none}}
+.zoo-laden{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.zoo-karte{background:var(--karte);border-radius:16px;padding:4px 6px 10px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:1px;min-width:0}
+.zoo-karte img{width:100%;aspect-ratio:1;object-fit:contain}
+.zoo-karte .name{font-size:13px;font-weight:600;line-height:1.2;hyphens:auto;-webkit-hyphens:auto;overflow-wrap:break-word;max-width:100%}
+.zoo-karte.selten{box-shadow:inset 0 0 0 2px color-mix(in srgb,#2F78D0 25%,transparent)}
+.zoo-karte.episch{box-shadow:inset 0 0 0 2px color-mix(in srgb,#7558D6 30%,transparent)}
+.zoo-karte.legendaer{box-shadow:inset 0 0 0 2px color-mix(in srgb,#E0A21A 45%,transparent)}
+.zoo-karte:active{transform:scale(.96)}
+.zoo-preis{font-size:12px;color:var(--leise);display:flex;align-items:center;gap:3px;font-variant-numeric:tabular-nums;margin-top:2px}
+.zoo-preis svg{width:13px;height:13px}
+.zoo-preis.fehlt{opacity:.55}
+.zoo-preis.hat{color:var(--wiese);font-weight:600}
+.zoo-preis.hat svg{fill:none;stroke:currentColor;stroke-width:2.4}
+.zoo-preis.ziel svg.flamme{fill:#E8663D}
+.zoo-preis.ziel svg.pokal{fill:#E0A21A}
+.zoo-preis.ziel svg:not(.flamme):not(.pokal){fill:none;stroke:currentColor;stroke-width:2.4}
+.zoo-portrait{width:min(220px,62%);aspect-ratio:1;margin:0 auto}
+.mittig{text-align:center}
+h3.mittig{margin-top:0}
+.balken.voll{display:block;width:100%;margin-top:8px}
+.zoo-text{text-align:center;color:var(--leise);margin:14px 4px 0}
+.marke.selten{color:#2F78D0;border-color:color-mix(in srgb,#2F78D0 35%,var(--linie))}
+.marke.episch{color:#7558D6;border-color:color-mix(in srgb,#7558D6 35%,var(--linie))}
+.marke.legendaer{color:color-mix(in srgb,#B37F00 75%,var(--tinte));border-color:color-mix(in srgb,#E0A21A 50%,var(--linie))}

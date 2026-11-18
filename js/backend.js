@@ -11,7 +11,7 @@ function deutsch(e) {
   if (/farbe_form|tier_kurz|bild_form/.test(m)) return 'Dieser Wert passt nicht';
   if (/betrag_grenze/.test(m)) return 'Der Betrag ist zu groß';
   if (/Anonymous sign-ins are disabled/i.test(m)) return 'In Supabase sind anonyme Anmeldungen noch ausgeschaltet';
-  if (e?.code === 'PGRST202' || e?.code === 'PGRST204' || e?.code === '42883' || /einkauf_status_check/.test(m)) return 'Dafür fehlt noch ein Update in Supabase (Dateien 05 bis 10)';
+  if (e?.code === 'PGRST202' || e?.code === 'PGRST204' || e?.code === '42883' || /einkauf_status_check/.test(m)) return 'Dafür fehlt noch ein Update in Supabase (Dateien 05 bis 11)';
   console.error('Supabase:', e);
   return 'Das hat nicht geklappt' + (m ? ` (${m.slice(0, 120)})` : '');
 }
@@ -71,7 +71,7 @@ export function supabaseBackend(sb, url) {
     // ---------- Alles, was die App anzeigt, in einem Rutsch
     async laden() {
       const h = heute();
-      const [mitglieder, aufgaben, best, joker, einkauf, termine, merk, schweine, post, info, serien, ergebnis] = await Promise.all([
+      const [mitglieder, aufgaben, best, joker, einkauf, termine, merk, schweine, post, info, serien, ergebnis, zooTiere, zooStand] = await Promise.all([
         x(sb.from('mitglieder').select('id,name,rolle,farbe,tier,bild_pfad,mitteilungen').order('created_at')),
         x(sb.from('aufgaben').select('*').or(`status.in.(offen,wartet),faellig.gte.${plus(h, -7)},erledigt_am.gte."${vor(7)}"`).order('created_at')),
         x(sb.from('bestenliste').select('*')),
@@ -84,9 +84,12 @@ export function supabaseBackend(sb, url) {
         x(sb.from('familie_info').select('iban,empfaenger').maybeSingle()),
         mild(sb.from('serien').select('*').order('created_at')),
         mild(sb.from('wochen_ergebnis').select('woche,mitglied_id,punkte,platz,joker').order('woche', { ascending: false }).limit(12)),
+        x(sb.from('zoo_tiere').select('mitglied_id,tier,wie,futter,am').order('am')).catch(() => null),   // braucht 11_zoo.sql
+        rpc('zoo_stand').catch(() => null),
       ]);
       const letzte = ergebnis.length ? ergebnis[0].woche : null;
       return { mitglieder, aufgaben, best, jokerHeute: joker.map(j => j.mitglied_id), einkauf, termine, merk, schweine, info: info || {}, serien,
+        zoo: zooTiere && zooStand ? { tiere: zooTiere, stand: zooStand } : null,
         post: post.map(p => ({ id: p.id, art: p.art, titel: p.titel, inhalt: p.inhalt, ziel: p.ziel || null, created_at: p.created_at })),
         endstand: letzte ? { woche: letzte, reihen: ergebnis.filter(e => e.woche === letzte).map(({ woche, ...rest }) => rest) } : null };
     },
@@ -150,6 +153,10 @@ export function supabaseBackend(sb, url) {
     buchen: b => x(sb.from('spar_buchungen').insert({ schwein_id: b.schwein_id, mitglied_id: b.mitglied_id, betrag_cent: b.betrag_cent, weg: b.weg || 'bar' })),
     buchungen: id => x(sb.from('spar_buchungen').select('id,mitglied_id,betrag_cent,weg,am').eq('schwein_id', id).order('am', { ascending: false }).limit(40)),
     schweinAufbrechen: id => rpc('sparschwein_aufbrechen', { p_id: id }),
+
+    // ---------- Zoo (braucht 11_zoo.sql)
+    zooKaufen: id => rpc('zoo_kaufen', { p_tier: id }),
+    zooHerz: id => rpc('zoo_herz', { p_fuer: id }),
 
     // ---------- Mitteilungen
     postGelesen: () => x(sb.from('mitteilungen').update({ gelesen: true }).eq('gelesen', false)),
