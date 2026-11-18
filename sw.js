@@ -1,14 +1,16 @@
 // Service Worker: hält die App-Dateien bereit, damit sie auch bei schlechtem Netz startet.
 // Regel: erst das Netz fragen (so kommen Updates sofort an), nach 3 Sekunden oder ohne Netz den gemerkten Stand nehmen.
 // Daten von Supabase laufen nicht hierüber. Bei jeder Änderung an der Dateiliste VERSION hochzählen.
-const VERSION = 'zoo-10';
+// GitHub Pages erlaubt dem Gerät, Dateien 10 Minuten lang ungefragt zu behalten. Darum fragen wir immer kurz nach
+// (no-cache: der Server antwortet „unverändert", wenn nichts neu ist) und laden beim Einrichten alles frisch.
+const VERSION = 'zoo-11';
 const DATEIEN = ['./', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/main.js', 'js/kern.js', 'js/zustand.js', 'js/hilfen.js', 'js/ansichten.js', 'js/aktionen.js', 'js/backend.js', 'js/demo.js', 'js/config.js', 'js/zoo_katalog.js',
   'vendor/idiomorph.js', 'vendor/supabase.js', 'icons/logo.webp', 'icons/joker.webp', 'icons/apple-touch-icon.png', 'icons/icon-192.png',
   'klang/haken.mp3', 'klang/fertig.mp3', 'klang/muenze.mp3', 'klang/joker.mp3', 'klang/sieg.mp3'];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(VERSION).then(c => c.addAll(DATEIEN)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(VERSION).then(c => c.addAll(DATEIEN.map(d => new Request(d, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {
@@ -19,7 +21,8 @@ self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== self.location.origin) return;
   const gemerkt = () => caches.match(e.request, { ignoreSearch: true }).then(r => r || caches.match('index.html'));
-  const netz = fetch(e.request).then(antwort => {
+  const frisch = e.request.mode === 'navigate' ? fetch(e.request.url, { cache: 'no-cache' }) : fetch(e.request, { cache: 'no-cache' });
+  const netz = frisch.then(antwort => {
     if (antwort.ok) { const kopie = antwort.clone(); caches.open(VERSION).then(c => c.put(e.request, kopie)); }
     return antwort;
   });

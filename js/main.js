@@ -26,4 +26,20 @@ if ('serviceWorker' in navigator) {
 starte(B, VAPID_PUBLIC);
 
 // Offline-Start. Nicht in der Demo, damit beim Ausprobieren nichts Altes hängen bleibt.
-if ('serviceWorker' in navigator && !S.demo) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+if ('serviceWorker' in navigator && !S.demo) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').then(reg => {
+    // Auf dem iPhone wird die App selten wirklich neu gestartet, sie kommt meist aus dem Hintergrund zurück.
+    // Dann nach einer neuen Version schauen.
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
+  }).catch(() => {}));
+  // Eine neue Version hat übernommen: einmal neu laden, damit alle Dateien zusammenpassen.
+  // Ist gerade ein Blatt offen (z. B. ein Entwurf), warten wir, bis die App im Hintergrund ist.
+  if (navigator.serviceWorker.controller) {
+    let neuGeladen = false;
+    const neuLaden = () => { if (!neuGeladen) { neuGeladen = true; location.reload(); } };
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!S.sheet) return neuLaden();
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') neuLaden(); });
+    });
+  }
+}
