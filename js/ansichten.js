@@ -6,7 +6,7 @@ import { toeneAn } from './kern.js';
 import {
   esc, euro, heute, plus, montag, tagVon, iso, wocheEnde, fmtLang, fmtKurz, fmtDatum, fmtMonat, fmtZeit,
   wochentagKurz, relTag, relKurz, fmtTag, PUNKTE, ABZUG, wert, aufzaehlen, MAX_FOTOS, fotosVon, fotoText, KREUZ, POKAL, TIERE, FARBEN, WOCHENTAGE, HAKEN, MIKRO, KAMERA, FLAMME, LOB, ALLE, ICON, TABS,
-  SELTEN, FUTTER, HERZ, zahl,
+  SELTEN, LEBENSRAUM, FUTTER, HERZ, zahl,
 } from './hilfen.js';
 import { ZOO_TIERE, ZOO_RASTER, ZOO_OBEN } from './zoo_katalog.js';
 
@@ -789,23 +789,33 @@ function bZooTier(s) {
   const t = zooTier(s.id), z = S.d.zoo, wer = s.wer || S.ich, eigen = wer === S.ich;
   const st = z.stand.find(x => x.mitglied_id === S.ich) || {};
   const da = z.tiere.find(x => x.mitglied_id === wer && x.tier === s.id);
-  let mehr = '';
+  const zeile = (label, wert, mehr = '') => `<div class="zeile"><span class="mitte titel">${label}</span><span class="zoo-wert">${wert}${mehr ? `<small>${mehr}</small>` : ''}</span></div>`;
+  const steckbrief = [zeile('Lebensraum', LEBENSRAUM[t.lebensraum] || ''), zeile('Frisst', esc(t.frisst))];
+  let bild, unten = '';
   if (da) {
+    // Wohnt im Zoo: das Gehege von nahem, das Tier bewegt sich darin.
+    const muede = !!(z.stand.find(x => x.mitglied_id === wer) || {}).muede;
+    bild = `<div class="zoo-nah"><img src="zoo/nah/${t.lebensraum}.webp" alt="">
+      <img class="zoo-tier ${muede ? 'muede' : ''}" src="zoo/nah/tier/${t.id}.webp" alt="${esc(t.name)}" style="--n:0"></div>`;
     const wie = da.wie === 'start' ? 'Das erste Tier im Zoo' : da.wie === 'verdient' ? `Verdient: ${esc(t.ziel_text)}` : `Für ${zahl(da.futter)} Futter geholt`;
-    mehr = `<div class="liste"><div class="zeile"><span class="mitte"><span class="titel">${eigen ? 'Eingezogen' : `Wohnt bei ${esc(P(wer).name)}`}</span>
-      <span class="info">${relKurz(da.am)}</span><span class="info">${wie}</span></span></div></div>`;
-  } else if (t.futter) {
-    const fehlt = t.futter - (st.futter || 0);
-    mehr = `<p class="zoo-text">${fehlt > 0 ? `Dir fehlen noch ${zahl(fehlt)} Futter.` : `Du hast ${zahl(st.futter)} Futter.`}</p>
-      <div class="abstand"><button class="knopf" ${fehlt > 0 ? 'disabled' : ''} onclick="A.zooKaufen('${t.id}')">Für ${zahl(t.futter)} Futter holen</button></div>`;
+    steckbrief.push(zeile(eigen ? 'Eingezogen' : `Wohnt bei ${esc(P(wer).name)}`, relKurz(da.am), wie));
+    steckbrief.push(zeile('Stimmung', muede ? 'Müde' : 'Fröhlich'));
   } else {
-    const ziel = zielStand(t, st);
-    mehr = `<p class="klein-titel">Nur durch Fleiß</p><div class="liste"><div class="zeile"><span class="mitte"><span class="titel">${esc(t.ziel_text)}</span>
-      <span class="balken voll"><i style="width:${(ziel.ist / ziel.soll * 100).toFixed(1)}%"></i></span></span><span class="zahl">${ziel.ist} von ${ziel.soll}</span></div></div>
-      <p class="hinweis">Es zieht von selbst ein, sobald du es geschafft hast.</p>`;
+    bild = `<img class="zoo-portrait" src="zoo/bild/${t.id}.webp" alt="${esc(t.name)}">`;
+    if (t.futter) {
+      const fehlt = t.futter - (st.futter || 0);
+      unten = `<p class="zoo-text">${fehlt > 0 ? `Dir fehlen noch ${zahl(fehlt)} Futter.` : `Du hast ${zahl(st.futter)} Futter.`}</p>
+        <div class="abstand"><button class="knopf" ${fehlt > 0 ? 'disabled' : ''} onclick="A.zooKaufen('${t.id}')">Für ${zahl(t.futter)} Futter holen</button></div>`;
+    } else {
+      const ziel = zielStand(t, st);
+      unten = `<p class="klein-titel">Nur durch Fleiß</p><div class="liste"><div class="zeile"><span class="mitte"><span class="titel">${esc(t.ziel_text)}</span>
+        <span class="balken voll"><i style="width:${(ziel.ist / ziel.soll * 100).toFixed(1)}%"></i></span></span><span class="zahl">${ziel.ist} von ${ziel.soll}</span></div></div>
+        <p class="hinweis">Es zieht von selbst ein, sobald du es geschafft hast.</p>`;
+    }
   }
-  return `<img class="zoo-portrait" src="zoo/bild/${t.id}.webp" alt="${esc(t.name)}"><h3 class="mittig">${esc(t.name)}</h3>
-    <p class="mittig"><span class="marke ${t.seltenheit}">${SELTEN[t.seltenheit]}</span></p>${mehr}`;
+  return `${bild}<h3 class="mittig">${esc(t.name)}</h3><p class="mittig"><span class="marke ${t.seltenheit}">${SELTEN[t.seltenheit]}</span></p>
+    ${unten}<p class="klein-titel">Steckbrief</p><div class="liste">${steckbrief.join('')}</div>
+    <p class="klein-titel">Wusstest du?</p><p class="zoo-wissen">${esc(t.wissen)}</p>`;
 }
 
 const BLATT = {

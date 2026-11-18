@@ -3,7 +3,7 @@
 // Daten von Supabase laufen nicht hierüber. Bei jeder Änderung an der Dateiliste VERSION hochzählen.
 // GitHub Pages erlaubt dem Gerät, Dateien 10 Minuten lang ungefragt zu behalten. Darum fragen wir immer kurz nach
 // (no-cache: der Server antwortet „unverändert", wenn nichts neu ist) und laden beim Einrichten alles frisch.
-const VERSION = 'zoo-11';
+const VERSION = 'zoo-12';
 const DATEIEN = ['./', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/main.js', 'js/kern.js', 'js/zustand.js', 'js/hilfen.js', 'js/ansichten.js', 'js/aktionen.js', 'js/backend.js', 'js/demo.js', 'js/config.js', 'js/zoo_katalog.js',
   'vendor/idiomorph.js', 'vendor/supabase.js', 'icons/logo.webp', 'icons/joker.webp', 'icons/apple-touch-icon.png', 'icons/icon-192.png',

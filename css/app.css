@@ -494,6 +494,11 @@ svg.herz{width:18px;height:18px;flex:none;fill:#E8547A}
 .zoo-preis.ziel svg.flamme{fill:#E8663D}
 .zoo-preis.ziel svg.pokal{fill:#E0A21A}
 .zoo-preis.ziel svg:not(.flamme):not(.pokal){fill:none;stroke:currentColor;stroke-width:2.4}
+.zoo-nah{position:relative;aspect-ratio:4/3;margin:0 -16px 6px;overflow:hidden}
+.zoo-nah img{position:absolute;inset:0;width:100%;height:100%}
+.zoo-wert{color:var(--leise);text-align:right;max-width:62%;display:flex;flex-direction:column;align-items:flex-end;gap:1px}
+.zoo-wert small{font-size:13px}
+.zoo-wissen{background:var(--karte);border-radius:14px;padding:13px 16px;line-height:1.4}
 .zoo-portrait{width:min(220px,62%);aspect-ratio:1;margin:0 auto}
 .mittig{text-align:center}
 h3.mittig{margin-top:0}

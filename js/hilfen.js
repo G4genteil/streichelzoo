@@ -88,6 +88,8 @@ export const ICON = {
   familie: '<circle cx="9.5" cy="9" r="3.5"/><circle cx="18.5" cy="10.5" r="2.5"/><path d="M3 21c.4-4 3-6 6.5-6s6 2 6.5 6M17 15.5c3 0 5 1.8 5.5 5"/>',
 };
 // ---------- Zoo ----------
+export const LEBENSRAUM = { wiese: 'Wiese', teich: 'Teich', wald: 'Wald', savanne: 'Savanne', dschungel: 'Dschungel',
+  wueste: 'Wüste', eis: 'Eis', meer: 'Meer', zauber: 'Zauberland' };
 export const SELTEN = { gewoehnlich: 'Gewöhnlich', selten: 'Selten', episch: 'Episch', legendaer: 'Legendär' };
 export const FUTTER = '<svg class="futter" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 4.6c-1.6-1.3-5-1-5 2.6 0 3 2.300 6.300 5 6.300s5-3.300 5-6.300c0-3.600-3.400-3.900-5-2.600z"/><path class="blatt" d="M8 4.600c0-1.700.9-2.800 2.600-3.100-.1 1.700-1 2.800-2.600 3.100z"/></svg>';
 export const HERZ = '<svg class="herz" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 14s-5.500-3.300-5.500-7.300A3 3 0 0 1 8 4.900a3 3 0 0 1 5.500 1.800C13.500 10.700 8 14 8 14z"/></svg>';
